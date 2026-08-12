@@ -305,11 +305,16 @@
   color: var(--lb-text);
   background: var(--lb-hover);
 }
-/* glyph-only controls (+ / ⇄) need extra size+weight to match letter badges */
+/* glyph-only controls (+ / move) need flex centering to match letter badges */
 .lb-tag-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--lb-control-h) + 2px); /* match bordered chip total height */
+  padding: 0 4px;
   font-size: 13px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 1;
 }
 .lb-fade-in {
   opacity: 0;
@@ -340,16 +345,21 @@
 /* move button: bottom-right, revealed on hover, same chrome as other controls */
 .lb-move {
   margin-left: auto;
-  font-size: 13px;
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--lb-control-h) + 2px);
   color: var(--lb-text-muted);
   border: 1px solid var(--lb-border);
   border-radius: var(--lb-control-radius);
-  line-height: 16px;
   padding: 0 5px;
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.1s;
+}
+.lb-move svg {
+  width: 12px;
+  height: 12px;
 }
 .lb-card:hover .lb-move {
   opacity: 1;
@@ -595,11 +605,18 @@
     font-size: 15px;
   }
   .lb-move {
-    font-size: 18px;
     height: 30px;
-    line-height: 28px;
     padding: 0 10px;
     border-radius: 7px;
+  }
+  .lb-move svg {
+    width: 18px;
+    height: 18px;
+  }
+  .lb-tag-add {
+    height: 30px;
+    padding: 0 9px;
+    font-size: 18px;
   }
   .lb-origin-ai {
     font-size: 13px;
