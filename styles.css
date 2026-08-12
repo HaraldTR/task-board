@@ -420,7 +420,6 @@
   border-radius: 1px;
   background: var(--lb-text-faint);
 }
-.lb-priority-p0 { border-color: var(--lb-red); }
 .lb-priority-p0 .lb-bar-on { background: var(--lb-red); }
 .lb-priority-p1 .lb-bar-on { background: var(--lb-orange); }
 .lb-priority-p2 .lb-bar-on { background: var(--lb-yellow); }
