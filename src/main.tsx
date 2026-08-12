@@ -289,6 +289,14 @@ function priorityRank(p: string | null): number {
   return p ? PRIORITIES.indexOf(p as (typeof PRIORITIES)[number]) : PRIORITIES.length;
 }
 
+const AVATAR_COLORS = ['--lb-indigo', '--lb-blue', '--lb-orange', '--lb-red', '--lb-yellow', '--lb-gray'];
+
+function avatarColor(name: string): string {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return `var(${AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]})`;
+}
+
 /* ---------------- prompts & menus ---------------- */
 
 class TextPromptModal extends Modal {
@@ -489,7 +497,8 @@ function Card({
           </span>
         )}
         <span
-          className={`lb-assignee${task.assignee === DEFAULT_ASSIGNEE ? ' lb-fade-in' : ''}`}
+          className="lb-avatar"
+          style={{ background: avatarColor(task.assignee) }}
           onClick={(e) =>
             assigneeMenu(app, allAssignees, task.assignee, async (a) => {
               await setProp(app, task, 'assignee', a);
@@ -498,10 +507,7 @@ function Card({
           }
           title={`Assignee: ${task.assignee}`}
         >
-          @{task.assignee === DEFAULT_ASSIGNEE ? '' : task.assignee}
-        </span>
-        <span className="lb-move" onClick={statusMenu} title="Move to…">
-          ⇄
+          {task.assignee.charAt(0).toUpperCase()}
         </span>
       </div>
       <div className="lb-title">{task.title}</div>
@@ -557,6 +563,9 @@ function Card({
           +
         </span>
         {task.due && <span className="lb-due">{task.due}</span>}
+        <span className="lb-move" onClick={statusMenu} title="Move to…">
+          ⇄
+        </span>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 {
   "id": "linear-board",
   "name": "Linear Board",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "minAppVersion": "1.5.0",
   "description": "Linear-style task board over one-note-per-task files in pm/tasks/.",
   "author": "Harald",
