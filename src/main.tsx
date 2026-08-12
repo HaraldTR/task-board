@@ -233,6 +233,29 @@ function listProjects(app: App): string[] {
     .sort();
 }
 
+interface ProjectInfo {
+  icon: string | null;
+  color: string | null;
+}
+
+// icon/color come from the project folder note's frontmatter (icon: lucide
+// name, color: any CSS color).
+function loadProjectInfos(app: App): Map<string, ProjectInfo> {
+  const map = new Map<string, ProjectInfo>();
+  for (const slug of listProjects(app)) {
+    const note = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}/${slug}.md`);
+    let icon: string | null = null;
+    let color: string | null = null;
+    if (note instanceof TFile) {
+      const fm = app.metadataCache.getFileCache(note)?.frontmatter;
+      icon = typeof fm?.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null;
+      color = typeof fm?.color === 'string' && fm.color.trim() ? fm.color.trim() : null;
+    }
+    map.set(slug, { icon, color });
+  }
+  return map;
+}
+
 // A project is a folder under pm/projects/active/ with a folder note
 // (<slug>/<slug>.md) holding its metadata; everything else in it is scratch.
 async function createProject(app: App, slug: string) {
@@ -242,7 +265,18 @@ async function createProject(app: App, slug: string) {
   if (!app.vault.getAbstractFileByPath(notePath)) {
     await app.vault.create(
       notePath,
-      ['---', 'type: project', 'description:', `created: ${todayStr()}`, 'origin: human', 'tags: []', '---', ''].join('\n')
+      [
+        '---',
+        'type: project',
+        'description:',
+        'icon:',
+        'color:',
+        `created: ${todayStr()}`,
+        'origin: human',
+        'tags: []',
+        '---',
+        '',
+      ].join('\n')
     );
   }
 }
@@ -339,6 +373,12 @@ function avatarColor(name: string): string {
 
 /* ---------------- prompts & menus ---------------- */
 
+// Structural superset of React.MouseEvent so imperative modals can call the
+// same menu helpers with a plain DOM event.
+type ClickEvt = { stopPropagation: () => void; nativeEvent: MouseEvent };
+
+const domEvt = (evt: MouseEvent): ClickEvt => ({ stopPropagation: () => {}, nativeEvent: evt });
+
 class TextPromptModal extends Modal {
   constructor(
     app: App,
@@ -432,12 +472,171 @@ class SaveViewModal extends Modal {
   }
 }
 
+interface PickerLists {
+  allProjects: string[];
+  allTags: string[];
+  allAssignees: string[];
+}
+
+// Full task editor as a native Obsidian modal: works from the board, from a
+// command inside the note, and on mobile (renders as a bottom sheet there).
+class TaskEditModal extends Modal {
+  private title: string;
+  private status: string;
+  private priority: string | null;
+  private project: string | null;
+  private size: string | null;
+  private tags: string[];
+  private assignee: string;
+  private due: string;
+
+  constructor(app: App, private task: TaskItem, private lists: PickerLists) {
+    super(app);
+    this.title = task.title;
+    this.status = task.status;
+    this.priority = task.priority;
+    this.project = task.project;
+    this.size = task.size;
+    this.tags = [...task.tags];
+    this.assignee = task.assignee;
+    this.due = task.due ?? '';
+  }
+
+  onOpen() {
+    this.modalEl.addClass('lb-edit-modal');
+    this.titleEl.setText(`Edit ${this.task.id}`);
+
+    const input = this.contentEl.createEl('input', { type: 'text', placeholder: 'Task title…' });
+    input.style.width = '100%';
+    input.value = this.title;
+    input.addEventListener('input', () => (this.title = input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') void this.save();
+    });
+
+    const row = this.contentEl.createDiv({ cls: 'lb-modal-row' });
+    const pill = (render: () => string, open: (evt: MouseEvent, repaint: () => void) => void) => {
+      const b = row.createEl('button', { cls: 'lb-pill' });
+      const repaint = () => b.setText(render());
+      repaint();
+      b.addEventListener('click', (evt) => open(evt, repaint));
+    };
+
+    pill(
+      () => COLUMN_LABELS[this.status],
+      (evt, repaint) => {
+        const menu = new Menu();
+        for (const s of COLUMNS) {
+          menu.addItem((i) =>
+            i.setTitle(COLUMN_LABELS[s]).setChecked(this.status === s).onClick(() => {
+              this.status = s;
+              repaint();
+            })
+          );
+        }
+        menu.showAtMouseEvent(evt);
+      }
+    );
+    pill(
+      () => (this.priority ? `${this.priority} · ${PRIORITY_LABELS[this.priority]}` : 'Priority'),
+      (evt, repaint) => {
+        const menu = new Menu();
+        for (const p of [...PRIORITIES, null]) {
+          menu.addItem((i) =>
+            i
+              .setTitle(p ? `${p} · ${PRIORITY_LABELS[p]}` : 'No priority')
+              .setChecked(this.priority === p)
+              .onClick(() => {
+                this.priority = p;
+                repaint();
+              })
+          );
+        }
+        menu.showAtMouseEvent(evt);
+      }
+    );
+    pill(
+      () => this.project ?? 'Project *',
+      (evt, repaint) =>
+        projectMenu(this.app, this.lists.allProjects, this.project, (p) => {
+          this.project = p;
+          repaint();
+        }, domEvt(evt))
+    );
+    pill(
+      () => this.size ?? 'Size',
+      (evt, repaint) =>
+        sizeMenu(this.size, (s) => {
+          this.size = s;
+          repaint();
+        }, domEvt(evt))
+    );
+    pill(
+      () => (this.tags.length ? this.tags.join(', ') : 'Tags'),
+      (evt, repaint) =>
+        tagsMenu(this.app, this.lists.allTags, this.tags, (t) => {
+          this.tags = t;
+          repaint();
+        }, domEvt(evt))
+    );
+    pill(
+      () => `@${this.assignee}`,
+      (evt, repaint) =>
+        assigneeMenu(this.app, this.lists.allAssignees, this.assignee, (a) => {
+          this.assignee = a;
+          repaint();
+        }, domEvt(evt))
+    );
+
+    const dueRow = this.contentEl.createDiv({ cls: 'lb-edit-due' });
+    dueRow.createSpan({ text: 'Due' });
+    const due = dueRow.createEl('input', { type: 'date' });
+    due.value = this.due;
+    due.addEventListener('input', () => (this.due = due.value));
+
+    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const save = actions.createEl('button', { text: 'Save', cls: 'mod-cta' });
+    save.addEventListener('click', () => void this.save());
+  }
+
+  async save() {
+    const t = this.task;
+    if (!this.project) {
+      new Notice('Pick a project — every task needs one');
+      return;
+    }
+    await this.app.fileManager.processFrontMatter(t.file, (fm) => {
+      fm.priority = this.priority ?? '';
+      fm.project = this.project;
+      fm.size = this.size ?? '';
+      fm.tags = this.tags;
+      delete fm.tag;
+      fm.assignee = this.assignee;
+      fm.due = this.due || '';
+    });
+    if (this.status !== t.status) await moveTask(this.app, t, this.status);
+    const name = sanitizeName(this.title);
+    if (name && name !== t.title) {
+      await this.app.fileManager.renameFile(
+        t.file,
+        normalizePath(`${t.file.parent?.path ?? TASKS_ACTIVE}/${t.id} ${name}.md`)
+      );
+    }
+    new Notice(`${t.id} updated`);
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 function projectMenu(
   app: App,
   allProjects: string[],
   current: string | null,
   onPick: (project: string) => void,
-  e: React.MouseEvent
+  e: ClickEvt
 ) {
   e.stopPropagation();
   const menu = new Menu();
@@ -461,7 +660,7 @@ function tagsMenu(
   allTags: string[],
   current: string[],
   onChange: (tags: string[]) => void,
-  e: React.MouseEvent
+  e: ClickEvt
 ) {
   e.stopPropagation();
   const toggle = (tag: string) =>
@@ -482,7 +681,7 @@ function tagsMenu(
   menu.showAtMouseEvent(e.nativeEvent);
 }
 
-function sizeMenu(current: string | null, onPick: (size: string | null) => void, e: React.MouseEvent) {
+function sizeMenu(current: string | null, onPick: (size: string | null) => void, e: ClickEvt) {
   e.stopPropagation();
   const menu = new Menu();
   for (const s of [...SIZES, null]) {
@@ -498,7 +697,7 @@ function assigneeMenu(
   allAssignees: string[],
   current: string,
   onPick: (assignee: string) => void,
-  e: React.MouseEvent
+  e: ClickEvt
 ) {
   e.stopPropagation();
   const menu = new Menu();
@@ -535,6 +734,7 @@ function Card({
   allProjects,
   allTags,
   allAssignees,
+  projects,
   refresh,
 }: {
   app: App;
@@ -542,6 +742,7 @@ function Card({
   allProjects: string[];
   allTags: string[];
   allAssignees: string[];
+  projects: Map<string, ProjectInfo>;
   refresh: () => void;
 }) {
   const openNote = () => void app.workspace.getLeaf('tab').openFile(task.file);
@@ -585,18 +786,8 @@ function Card({
     e.stopPropagation();
     const menu = new Menu();
     menu.addItem((i) =>
-      i.setTitle('Edit title…').setIcon('pencil').onClick(() => {
-        new TextPromptModal(
-          app,
-          { title: `Edit title (${task.id})`, placeholder: 'Task title…', initial: task.title, cta: 'Save' },
-          async (t) => {
-            const name = sanitizeName(t);
-            if (!name || name === task.title) return;
-            const target = normalizePath(`${task.file.parent?.path ?? TASKS_ACTIVE}/${task.id} ${name}.md`);
-            await app.fileManager.renameFile(task.file, target);
-            refresh();
-          }
-        ).open();
+      i.setTitle('Edit…').setIcon('pencil').onClick(() => {
+        new TaskEditModal(app, task, { allProjects, allTags, allAssignees }).open();
       })
     );
     menu.addSeparator();
@@ -622,6 +813,11 @@ function Card({
         <span className="lb-id">{task.id}</span>
         <span
           className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
+          style={
+            task.project && projects.get(task.project)?.color
+              ? ({ '--proj-color': projects.get(task.project)!.color } as React.CSSProperties)
+              : undefined
+          }
           onClick={(e) =>
             projectMenu(app, allProjects, task.project, async (p) => {
               await setProp(app, task, 'project', p);
@@ -630,7 +826,10 @@ function Card({
           }
           title="Set project"
         >
-          {task.project ?? 'no project'}
+          {task.project && projects.get(task.project)?.icon && (
+            <LucideIcon name={projects.get(task.project)!.icon!} />
+          )}
+          <span className="lb-project-name">{task.project ?? 'no project'}</span>
         </span>
         {task.origin === 'ai' && (
           <span className="lb-origin-ai" title="Created by AI">
@@ -741,6 +940,7 @@ function Column({
   allProjects,
   allTags,
   allAssignees,
+  projects,
   refresh,
 }: {
   app: App;
@@ -749,6 +949,7 @@ function Column({
   allProjects: string[];
   allTags: string[];
   allAssignees: string[];
+  projects: Map<string, ProjectInfo>;
   refresh: () => void;
 }) {
   const [over, setOver] = useState(false);
@@ -785,6 +986,7 @@ function Column({
             allProjects={allProjects}
             allTags={allTags}
             allAssignees={allAssignees}
+            projects={projects}
             refresh={refresh}
           />
         ))}
@@ -1006,6 +1208,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     () => [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
     [tasks]
   );
+  const projectInfos = useMemo(() => loadProjectInfos(app), [app, tick]);
 
   const fieldValues: Record<FilterField, string[]> = useMemo(
     () => ({
@@ -1178,6 +1381,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
               allProjects={allProjects}
               allTags={allTags}
               allAssignees={allAssignees}
+              projects={projectInfos}
               refresh={refresh}
               tasks={visible
                 .filter((t) => t.status === c)
@@ -1287,6 +1491,29 @@ export default class LinearBoardPlugin extends Plugin {
       id: 'open-board',
       name: 'Open task board',
       callback: () => void this.activateView(),
+    });
+
+    this.addCommand({
+      id: 'edit-task',
+      name: 'Edit task',
+      checkCallback: (checking) => {
+        const f = this.app.workspace.getActiveFile();
+        if (!f || !f.path.startsWith(TASKS_FOLDER + '/')) return false;
+        if (this.app.metadataCache.getFileCache(f)?.frontmatter?.type !== 'task') return false;
+        if (!checking) {
+          const tasks = loadTasks(this.app);
+          const task = tasks.find((t) => t.path === f.path);
+          if (!task) return;
+          new TaskEditModal(this.app, task, {
+            allProjects: [
+              ...new Set([...listProjects(this.app), ...tasks.map((t) => t.project).filter((p): p is string => !!p)]),
+            ].sort(),
+            allTags: [...new Set([...loadTagRegistry(this.app), ...tasks.flatMap((t) => t.tags)])].sort(),
+            allAssignees: [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
+          }).open();
+        }
+        return true;
+      },
     });
   }
 

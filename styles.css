@@ -232,19 +232,24 @@
   margin-bottom: 3px;
 }
 .lb-project {
-  color: var(--lb-indigo);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--proj-color, var(--lb-indigo));
   border: 1px solid transparent;
   border-radius: var(--lb-radius-chip);
   padding: 0 6px;
-  background: color-mix(in srgb, var(--lb-indigo) 12%, transparent);
+  background: color-mix(in srgb, var(--proj-color, var(--lb-indigo)) 12%, transparent);
   max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
 }
 .lb-project:hover {
-  border-color: var(--lb-indigo);
+  border-color: var(--proj-color, var(--lb-indigo));
+}
+.lb-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lb-project-empty {
   color: var(--lb-orange);
@@ -510,6 +515,31 @@
 .lb-pill-required {
   border-color: var(--lb-orange);
   color: var(--lb-orange);
+}
+
+/* task edit modal (renders in document body — re-declare the tokens it needs) */
+.lb-edit-modal {
+  --lb-indigo: #5e6ad2;
+  --lb-border: var(--background-modifier-border);
+  --lb-hover: var(--background-modifier-hover);
+  --lb-text: var(--text-normal);
+  --lb-text-muted: var(--text-muted);
+  --lb-text-faint: var(--text-faint);
+  --lb-radius: 6px;
+  --lb-active-border: var(--lb-indigo);
+}
+.lb-edit-modal input[type='text'] {
+  margin-bottom: 10px;
+}
+.lb-edit-modal .lb-modal-row {
+  margin-bottom: 10px;
+}
+.lb-edit-due {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 /* save-view modal icon picker (renders in document body — Obsidian vars only) */
