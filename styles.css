@@ -284,9 +284,12 @@
   font-variant-numeric: tabular-nums;
 }
 .lb-tag {
+  font-size: 11px;
+  font-weight: 400;
   border: 1px solid var(--lb-border);
-  border-radius: var(--lb-radius-chip);
-  padding: 0 7px;
+  border-radius: 5px;
+  padding: 0 5px;
+  line-height: 17px;
   color: var(--lb-text-muted);
   max-width: 100px;
   overflow: hidden;
@@ -326,11 +329,11 @@
 /* move button: bottom-right, revealed on hover, same chrome as other controls */
 .lb-move {
   margin-left: auto;
+  font-size: 11px;
   color: var(--lb-text-muted);
   border: 1px solid var(--lb-border);
   border-radius: 5px;
-  height: 17px;
-  line-height: 15px;
+  line-height: 17px;
   padding: 0 5px;
   flex-shrink: 0;
   opacity: 0;
@@ -560,8 +563,8 @@
   .lb-tag {
     font-size: 14px;
     line-height: 28px;
-    padding: 0 12px;
-    border-radius: 15px;
+    padding: 0 10px;
+    border-radius: 7px;
   }
   .lb-project {
     font-size: 14px;
