@@ -383,15 +383,15 @@
   background: var(--lb-hover);
 }
 
-/* priority: colored level bars */
+/* priority: colored level bars, unbordered like Linear's priority icon */
 .lb-priority {
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
   height: 17px;
-  padding: 3px 5px;
-  border: 1px solid var(--lb-border);
-  border-radius: 5px;
+  padding: 3px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--lb-control-radius);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -407,7 +407,6 @@
 .lb-bar:nth-child(2) { height: 6px; }
 .lb-bar:nth-child(3) { height: 8px; }
 .lb-bar:nth-child(4) { height: 10px; }
-.lb-priority-p0 { border-color: var(--lb-red); }
 .lb-priority-p0 .lb-bar-on { background: var(--lb-red); }
 .lb-priority-p1 .lb-bar-on { background: var(--lb-orange); }
 .lb-priority-p2 .lb-bar-on { background: var(--lb-yellow); }
