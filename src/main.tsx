@@ -1040,9 +1040,10 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             ))}
           </div>
           <button
-            className={`lb-pill${filterOpen ? ' lb-pill-active' : ''}`}
+            className={`lb-pill lb-filter-btn${filterOpen ? ' lb-pill-active' : ''}`}
             onClick={() => setFilterOpen((o) => !o)}
           >
+            <LucideIcon name="plus" />
             Filter{filtered ? ' •' : ''}
           </button>
           <label className="lb-toggle">

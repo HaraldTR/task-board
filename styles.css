@@ -124,6 +124,15 @@
   color: var(--lb-text);
   border-color: var(--lb-active-border);
 }
+/* add-filter button: indigo accent to stand apart from view pills */
+.lb-filter-btn {
+  color: var(--lb-active-border);
+  border-color: color-mix(in srgb, var(--lb-active-border) 55%, var(--lb-border));
+}
+.lb-filter-btn:hover {
+  color: var(--lb-active-border);
+  background: color-mix(in srgb, var(--lb-indigo) 12%, transparent);
+}
 
 /* ---------- board ---------- */
 .lb-board {
