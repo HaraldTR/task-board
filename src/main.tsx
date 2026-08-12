@@ -12,6 +12,7 @@ import {
   TFolder,
   WorkspaceLeaf,
   normalizePath,
+  setIcon,
 } from 'obsidian';
 import { StrictMode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Root, createRoot } from 'react-dom/client';
@@ -79,7 +80,24 @@ type Conditions = Partial<Record<FilterField, string[]>>;
 interface SavedView {
   name: string;
   conditions: Conditions;
+  icon?: string;
 }
+
+// Flat Lucide icons offered for saved-view pills (rendered via Obsidian's setIcon).
+const VIEW_ICONS = [
+  'flame',
+  'bug',
+  'star',
+  'user',
+  'briefcase',
+  'home',
+  'zap',
+  'target',
+  'calendar',
+  'bookmark',
+  'heart',
+  'rocket',
+];
 
 function matchesConditions(t: TaskItem, conds: Conditions): boolean {
   for (const f of FILTER_FIELDS) {
@@ -302,7 +320,7 @@ function avatarColor(name: string): string {
 class TextPromptModal extends Modal {
   constructor(
     app: App,
-    private opts: { title: string; placeholder: string; slug?: boolean },
+    private opts: { title: string; placeholder: string; slug?: boolean; initial?: string; cta?: string },
     private onSubmit: (value: string) => void
   ) {
     super(app);
@@ -315,6 +333,10 @@ class TextPromptModal extends Modal {
       placeholder: this.opts.placeholder,
     });
     input.style.width = '100%';
+    if (this.opts.initial) {
+      input.value = this.opts.initial;
+      window.setTimeout(() => input.select(), 10);
+    }
     const submit = () => {
       let v = input.value.trim();
       if (this.opts.slug) v = v.toLowerCase().replace(/\s+/g, '-');
@@ -325,7 +347,7 @@ class TextPromptModal extends Modal {
       if (e.key === 'Enter') submit();
     });
     const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const btn = row.createEl('button', { text: 'Add', cls: 'mod-cta' });
+    const btn = row.createEl('button', { text: this.opts.cta ?? 'Add', cls: 'mod-cta' });
     btn.addEventListener('click', submit);
     window.setTimeout(() => input.focus(), 10);
   }
@@ -419,6 +441,19 @@ function assigneeMenu(
 
 /* ---------------- React UI ---------------- */
 
+function LucideIcon({ name }: { name: string }) {
+  const ref = useCallback(
+    (el: HTMLSpanElement | null) => {
+      if (el) {
+        el.textContent = '';
+        setIcon(el, name);
+      }
+    },
+    [name]
+  );
+  return <span className="lb-view-icon" ref={ref} />;
+}
+
 function Card({
   app,
   task,
@@ -470,12 +505,43 @@ function Card({
     menu.showAtMouseEvent(e.nativeEvent);
   };
 
+  const contextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i.setTitle('Edit title…').setIcon('pencil').onClick(() => {
+        new TextPromptModal(
+          app,
+          { title: `Edit title (${task.id})`, placeholder: 'Task title…', initial: task.title, cta: 'Save' },
+          async (t) => {
+            const name = sanitizeName(t);
+            if (!name || name === task.title) return;
+            const target = normalizePath(`${task.file.parent?.path ?? TASKS_ACTIVE}/${task.id} ${name}.md`);
+            await app.fileManager.renameFile(task.file, target);
+            refresh();
+          }
+        ).open();
+      })
+    );
+    menu.addSeparator();
+    menu.addItem((i) =>
+      i.setTitle('Delete').setIcon('trash').onClick(async () => {
+        await app.vault.trash(task.file, true);
+        new Notice(`${task.id} moved to trash`);
+        refresh();
+      })
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
   return (
     <div
       className="lb-card"
       draggable
       onDragStart={(e) => e.dataTransfer.setData('text/task-path', task.path)}
       onClick={openNote}
+      onContextMenu={contextMenu}
     >
       <div className="lb-card-top">
         <span className="lb-id">{task.id}</span>
@@ -865,6 +931,46 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const deleteView = (name: string) => {
     persistViews(views.filter((v) => v.name !== name));
     if (activeView === name) clearAll();
+  };
+
+  const updateView = (name: string, patch: Partial<SavedView>) => {
+    persistViews(views.map((v) => (v.name === name ? { ...v, ...patch } : v)));
+    if (patch.name && activeView === name) setActiveView(patch.name);
+  };
+
+  const viewContextMenu = (v: SavedView, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i.setTitle('Rename…').setIcon('pencil').onClick(() => {
+        new TextPromptModal(
+          app,
+          { title: 'Rename view', placeholder: 'View name…', initial: v.name, cta: 'Save' },
+          (name) => updateView(v.name, { name })
+        ).open();
+      })
+    );
+    menu.addItem((i) =>
+      i.setTitle('Change icon…').setIcon('image').onClick((evt) => {
+        const iconMenu = new Menu();
+        for (const ic of VIEW_ICONS) {
+          iconMenu.addItem((j) =>
+            j.setTitle(ic).setIcon(ic).setChecked(v.icon === ic).onClick(() => updateView(v.name, { icon: ic }))
+          );
+        }
+        if (v.icon) {
+          iconMenu.addSeparator();
+          iconMenu.addItem((j) =>
+            j.setTitle('Remove icon').setIcon('x').onClick(() => updateView(v.name, { icon: undefined }))
+          );
+        }
+        iconMenu.showAtMouseEvent(evt instanceof MouseEvent ? evt : e.nativeEvent);
+      })
+    );
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle('Delete').setIcon('trash').onClick(() => deleteView(v.name)));
+    menu.showAtMouseEvent(e.nativeEvent);
   };
 
   const visible = tasks.filter((t) => matchesConditions(t, conditions));
