@@ -14,7 +14,7 @@ import {
   normalizePath,
   setIcon,
 } from 'obsidian';
-import { StrictMode, useCallback, useEffect, useMemo, useState } from 'react';
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Root, createRoot } from 'react-dom/client';
 
 const VIEW_TYPE = 'linear-board-view';
@@ -301,6 +301,28 @@ async function createTask(
   ];
   const path = normalizePath(`${taskFolderFor(fields.status)}/${id} ${sanitizeName(fields.title)}.md`);
   return app.vault.create(path, lines.join('\n'));
+}
+
+const ATTACH_FOLDER = 'pm/attachments';
+
+// Append description and attachment embeds to a freshly created task note.
+async function addBodyToTask(app: App, file: TFile, desc: string, files: File[]) {
+  const embeds: string[] = [];
+  if (files.length) await ensureFolder(app, ATTACH_FOLDER);
+  const id = file.basename.split(' ')[0];
+  for (const f of files) {
+    const safe = f.name.replace(/[\\/:|#^\[\]"*?<>]/g, '-');
+    let path = normalizePath(`${ATTACH_FOLDER}/${id} ${safe}`);
+    if (app.vault.getAbstractFileByPath(path)) {
+      path = normalizePath(`${ATTACH_FOLDER}/${id} ${Math.random().toString(36).slice(2, 7)} ${safe}`);
+    }
+    await app.vault.createBinary(path, await f.arrayBuffer());
+    embeds.push(`![[${path}]]`);
+  }
+  const parts: string[] = [];
+  if (desc.trim()) parts.push(desc.trim());
+  if (embeds.length) parts.push(embeds.join('\n'));
+  if (parts.length) await app.vault.process(file, (data) => data + parts.join('\n\n') + '\n');
 }
 
 function priorityRank(p: string | null): number {
@@ -789,13 +811,17 @@ function QuickAdd({
   refresh: () => void;
 }) {
   const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
   const [status, setStatus] = useState('today');
   const [priority, setPriority] = useState<string | null>(null);
   const [project, setProject] = useState<string | null>(null);
   const [size, setSize] = useState<string | null>(null);
   const [tags, setTagsState] = useState<string[]>([]);
   const [assignee, setAssignee] = useState(DEFAULT_ASSIGNEE);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [expanded, setExpanded] = useState(false);
   const [missingProject, setMissingProject] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const submit = async () => {
     if (!title.trim()) return;
@@ -804,7 +830,8 @@ function QuickAdd({
       new Notice('Pick a project — every task needs one');
       return;
     }
-    await createTask(app, tasks, { title: title.trim(), status, priority, project, size, tags, assignee });
+    const file = await createTask(app, tasks, { title: title.trim(), status, priority, project, size, tags, assignee });
+    await addBodyToTask(app, file, desc, attachments);
     new Notice(`Created in ${COLUMN_LABELS[status]}`);
     refresh();
     onClose();
@@ -835,8 +862,17 @@ function QuickAdd({
 
   return (
     <div className="lb-overlay" onClick={onClose}>
-      <div className="lb-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="lb-modal-hint">New task</div>
+      <div className={`lb-modal${expanded ? ' lb-modal-expanded' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div className="lb-modal-head">
+          <div className="lb-modal-hint">New task</div>
+          <button
+            className="lb-modal-iconbtn"
+            onClick={() => setExpanded((x) => !x)}
+            title={expanded ? 'Collapse' : 'Expand'}
+          >
+            <LucideIcon name={expanded ? 'minimize-2' : 'maximize-2'} />
+          </button>
+        </div>
         <input
           className="lb-modal-title"
           autoFocus
@@ -848,6 +884,30 @@ function QuickAdd({
             if (e.key === 'Escape') onClose();
           }}
         />
+        <textarea
+          className="lb-modal-desc"
+          placeholder="Add description…"
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+        {attachments.length > 0 && (
+          <div className="lb-modal-files">
+            {attachments.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="lb-tag">
+                {f.name}
+                <span
+                  className="lb-cond-x"
+                  onClick={() => setAttachments(attachments.filter((_, j) => j !== i))}
+                >
+                  ×
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="lb-modal-row">
           <button
             className={`lb-pill${missingProject && !project ? ' lb-pill-required' : ''}`}
@@ -877,6 +937,23 @@ function QuickAdd({
           </button>
         </div>
         <div className="lb-modal-actions">
+          <input
+            type="file"
+            multiple
+            style={{ display: 'none' }}
+            ref={fileInput}
+            onChange={(e) => {
+              setAttachments([...attachments, ...Array.from(e.target.files ?? [])]);
+              e.target.value = '';
+            }}
+          />
+          <button
+            className="lb-pill lb-attach"
+            onClick={() => fileInput.current?.click()}
+            title="Attach files"
+          >
+            <LucideIcon name="paperclip" />
+          </button>
           <span className="lb-modal-kbd">↵ to create · esc to close</span>
           <button className="mod-cta" onClick={() => void submit()}>
             Create task
