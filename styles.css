@@ -45,6 +45,7 @@
 /* dark themes: near-black surfaces, lifted grey borders for contrast */
 .theme-dark .lb-view {
   --lb-surface: #0a0a0c;
+  --lb-surface-2: #1d1d24; /* lanes: lighter than cards for contrast */
   --lb-border: #565664;
   --lb-border-hover: #8a8a9a;
   --lb-title: #f2f2f4;
@@ -312,9 +313,11 @@
   justify-content: center;
   height: calc(var(--lb-control-h) + 2px); /* match bordered chip total height */
   padding: 0 4px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1;
+}
+.lb-tag-add svg {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 .lb-fade-in {
   opacity: 0;
@@ -616,7 +619,10 @@
   .lb-tag-add {
     height: 30px;
     padding: 0 9px;
-    font-size: 18px;
+  }
+  .lb-tag-add svg {
+    width: 18px;
+    height: 18px;
   }
   .lb-origin-ai {
     font-size: 13px;

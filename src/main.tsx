@@ -562,7 +562,16 @@ function Card({
           }
           title="Add tag"
         >
-          +
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </svg>
         </span>
         {task.due && <span className="lb-due">{task.due}</span>}
         <span className="lb-move" onClick={statusMenu} title="Move to…">
