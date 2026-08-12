@@ -42,6 +42,7 @@ const PRIORITY_LABELS: Record<string, string> = {
   P2: 'Medium',
   P3: 'Low',
 };
+const PRIORITY_LEVEL: Record<string, number> = { P0: 4, P1: 3, P2: 2, P3: 1 };
 const SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const;
 
 interface TaskItem {
@@ -508,9 +509,14 @@ function Card({
         <span
           className={`lb-priority lb-priority-${(task.priority ?? 'none').toLowerCase()}`}
           onClick={priorityMenu}
-          title={task.priority ? PRIORITY_LABELS[task.priority] : 'Set priority'}
+          title={task.priority ? `${task.priority} · ${PRIORITY_LABELS[task.priority]}` : 'Set priority'}
         >
-          {task.priority ?? '·'}
+          {[1, 2, 3, 4].map((n) => (
+            <span
+              key={n}
+              className={`lb-bar${task.priority && n <= PRIORITY_LEVEL[task.priority] ? ' lb-bar-on' : ''}`}
+            />
+          ))}
         </span>
         <span
           className={`lb-size${task.size ? '' : ' lb-fade-in'}`}
@@ -522,12 +528,7 @@ function Card({
           }
           title={task.size ? `Size: ${task.size}` : 'Set size'}
         >
-          {SIZES.map((s, i) => (
-            <span
-              key={s}
-              className={`lb-bar${task.size && i <= SIZES.indexOf(task.size as (typeof SIZES)[number]) ? ' lb-bar-on' : ''}`}
-            />
-          ))}
+          {task.size ?? '◇'}
         </span>
         {task.tags.map((tag) => (
           <span
@@ -713,10 +714,7 @@ function QuickAdd({
             <span className={`lb-dot lb-dot-${status}`} /> {COLUMN_LABELS[status]}
           </button>
           <button className="lb-pill" onClick={priorityPill}>
-            <span className={`lb-priority lb-priority-${(priority ?? 'none').toLowerCase()}`}>
-              {priority ?? '·'}
-            </span>{' '}
-            {priority ? PRIORITY_LABELS[priority] : 'Priority'}
+            {priority ? `${priority} · ${PRIORITY_LABELS[priority]}` : 'Priority'}
           </button>
           <button className="lb-pill" onClick={(e) => sizeMenu(size, setSize, e)}>
             {size ?? 'Size'}
