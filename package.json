@@ -1,12 +1,14 @@
 {
   "name": "linear-board",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Linear-style task board for Obsidian, one note per task",
   "main": "main.js",
   "type": "module",
   "scripts": {
+    "prebuild": "[ -d node_modules ] || npm ci --no-audit --no-fund",
     "build": "node esbuild.config.mjs",
     "check": "tsc --noEmit",
+    "ship": "npm run build && npm run install-to-vault && echo 'Shipped. Reload Obsidian (cmd-P: Reload app without saving).'",
     "install-to-vault": "mkdir -p ../../.obsidian/plugins/linear-board && cp main.js manifest.json styles.css ../../.obsidian/plugins/linear-board/"
   },
   "devDependencies": {
