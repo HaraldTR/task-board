@@ -1,0 +1,23 @@
+{
+  "name": "linear-board",
+  "version": "0.1.0",
+  "description": "Linear-style task board for Obsidian, one note per task",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "check": "tsc --noEmit",
+    "install-to-vault": "mkdir -p ../../.obsidian/plugins/linear-board && cp main.js manifest.json styles.css ../../.obsidian/plugins/linear-board/"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "latest",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
