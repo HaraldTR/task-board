@@ -410,6 +410,16 @@
 .lb-bar:nth-child(2) { height: 6px; }
 .lb-bar:nth-child(3) { height: 8px; }
 .lb-bar:nth-child(4) { height: 10px; }
+/* no priority: three dashes, Linear-style */
+.lb-priority-none {
+  align-items: center;
+}
+.lb-dash {
+  width: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--lb-text-faint);
+}
 .lb-priority-p0 { border-color: var(--lb-red); }
 .lb-priority-p0 .lb-bar-on { background: var(--lb-red); }
 .lb-priority-p1 .lb-bar-on { background: var(--lb-orange); }
@@ -632,6 +642,10 @@
   .lb-bar:nth-child(2) { height: 12px; }
   .lb-bar:nth-child(3) { height: 16px; }
   .lb-bar:nth-child(4) { height: 20px; }
+  .lb-dash {
+    width: 5px;
+    height: 3px;
+  }
   .lb-size {
     font-size: 20px;
     line-height: 30px;

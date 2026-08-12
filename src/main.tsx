@@ -638,12 +638,11 @@ function Card({
           onClick={priorityMenu}
           title={task.priority ? `${task.priority} · ${PRIORITY_LABELS[task.priority]}` : 'Set priority'}
         >
-          {[1, 2, 3, 4].map((n) => (
-            <span
-              key={n}
-              className={`lb-bar${task.priority && n <= PRIORITY_LEVEL[task.priority] ? ' lb-bar-on' : ''}`}
-            />
-          ))}
+          {task.priority
+            ? [1, 2, 3, 4].map((n) => (
+                <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[task.priority!] ? ' lb-bar-on' : ''}`} />
+              ))
+            : [1, 2, 3].map((n) => <span key={n} className="lb-dash" />)}
         </span>
         <span
           className={`lb-size${task.size ? '' : ' lb-fade-in'}`}
