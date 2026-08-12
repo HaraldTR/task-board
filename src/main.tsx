@@ -4,7 +4,10 @@ import {
   Menu,
   Modal,
   Notice,
+  Platform,
   Plugin,
+  PluginSettingTab,
+  Setting,
   TFile,
   TFolder,
   WorkspaceLeaf,
@@ -956,6 +959,34 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
 
 interface LinearBoardSettings {
   views: SavedView[];
+  openOnLaunch: 'never' | 'mobile' | 'always';
+}
+
+const DEFAULT_SETTINGS: LinearBoardSettings = { views: [], openOnLaunch: 'mobile' };
+
+class LinearBoardSettingTab extends PluginSettingTab {
+  plugin: LinearBoardPlugin;
+
+  constructor(app: App, plugin: LinearBoardPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display() {
+    this.containerEl.empty();
+    new Setting(this.containerEl)
+      .setName('Open board on launch')
+      .setDesc('Open the task board automatically when Obsidian starts.')
+      .addDropdown((d) =>
+        d
+          .addOptions({ never: 'Never', mobile: 'On mobile only', always: 'Always' })
+          .setValue(this.plugin.settings.openOnLaunch)
+          .onChange(async (v) => {
+            this.plugin.settings.openOnLaunch = v as LinearBoardSettings['openOnLaunch'];
+            await this.plugin.saveData(this.plugin.settings);
+          })
+      );
+  }
 }
 
 class LinearBoardView extends ItemView {
@@ -989,12 +1020,20 @@ class LinearBoardView extends ItemView {
 }
 
 export default class LinearBoardPlugin extends Plugin {
-  settings: LinearBoardSettings = { views: [] };
+  settings: LinearBoardSettings = { ...DEFAULT_SETTINGS };
 
   async onload() {
-    this.settings = Object.assign({ views: [] }, await this.loadData());
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
     this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf, this));
+    this.addSettingTab(new LinearBoardSettingTab(this.app, this));
+
+    this.app.workspace.onLayoutReady(() => {
+      const mode = this.settings.openOnLaunch;
+      if (mode === 'always' || (mode === 'mobile' && Platform.isMobile)) {
+        void this.activateView();
+      }
+    });
 
     this.addRibbonIcon('kanban-square', 'Open task board', () => void this.activateView());
 
