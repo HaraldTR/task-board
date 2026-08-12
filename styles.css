@@ -597,9 +597,11 @@
   outline: none;
   box-shadow: none;
   resize: none;
-  padding: 0;
+  padding: 4px 2px 8px;
+  margin: 2px 0;
   color: var(--lb-text);
   font-size: var(--font-ui-small);
+  line-height: 1.5;
   font-family: inherit;
 }
 .lb-modal-expanded .lb-modal-desc {
