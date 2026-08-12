@@ -156,6 +156,9 @@
 .lb-dot-done {
   background: var(--lb-indigo);
 }
+.lb-dot-cancelled {
+  background: var(--lb-gray);
+}
 
 /* ---------- card ---------- */
 .lb-card {
@@ -196,6 +199,29 @@
 }
 .lb-project-empty:hover {
   border-color: var(--lb-orange);
+}
+.lb-origin-ai {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--lb-blue);
+  border: 1px solid var(--lb-blue);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 13px;
+  flex-shrink: 0;
+}
+.lb-assignee {
+  margin-left: auto;
+  color: var(--text-muted);
+  cursor: pointer;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-assignee:hover {
+  color: var(--text-normal);
 }
 .lb-title {
   line-height: 1.3;

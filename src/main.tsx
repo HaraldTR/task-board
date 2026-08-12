@@ -6,6 +6,7 @@ import {
   Notice,
   Plugin,
   TFile,
+  TFolder,
   WorkspaceLeaf,
   normalizePath,
 } from 'obsidian';
@@ -13,9 +14,15 @@ import { StrictMode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Root, createRoot } from 'react-dom/client';
 
 const VIEW_TYPE = 'linear-board-view';
-const TASKS_FOLDER = 'projects/tasks';
+const TASKS_FOLDER = 'pm/tasks';
+const TASKS_ACTIVE = 'pm/tasks/active';
+const TASKS_INACTIVE = 'pm/tasks/inactive';
+const PROJECTS_ACTIVE = 'pm/projects/active';
+const TAGS_FILE = 'pm/tags.md';
+const DEFAULT_ASSIGNEE = 'harald';
 
-const COLUMNS = ['agent-inbox', 'backlog', 'this-week', 'today', 'waiting', 'done'] as const;
+const COLUMNS = ['agent-inbox', 'backlog', 'this-week', 'today', 'waiting', 'done', 'cancelled'] as const;
+const CLOSED = ['done', 'cancelled'];
 const COLUMN_LABELS: Record<string, string> = {
   'agent-inbox': 'Inbox',
   backlog: 'Backlog',
@@ -23,6 +30,7 @@ const COLUMN_LABELS: Record<string, string> = {
   today: 'Today',
   waiting: 'Waiting',
   done: 'Done',
+  cancelled: 'Cancelled',
 };
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3'] as const;
 const PRIORITY_LABELS: Record<string, string> = {
@@ -46,6 +54,8 @@ interface TaskItem {
   due: string | null;
   started: string | null;
   completed: string | null;
+  assignee: string;
+  origin: 'human' | 'ai';
 }
 
 /* ---------------- filters ---------------- */
@@ -56,6 +66,8 @@ const FILTER_FIELDS = [
   { key: 'priority', label: 'Priority' },
   { key: 'size', label: 'Size' },
   { key: 'status', label: 'Status' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'origin', label: 'Origin' },
 ] as const;
 type FilterField = (typeof FILTER_FIELDS)[number]['key'];
 // OR within a field, AND across fields. 'none' matches tasks missing the field.
@@ -128,6 +140,9 @@ function loadTasks(app: App): TaskItem[] {
       due: fm.due ? String(fm.due) : null,
       started: fm.started ? String(fm.started) : null,
       completed: fm.completed ? String(fm.completed) : null,
+      assignee:
+        typeof fm.assignee === 'string' && fm.assignee.trim() ? fm.assignee.trim() : DEFAULT_ASSIGNEE,
+      origin: fm.origin === 'ai' ? 'ai' : 'human',
     });
   }
   return tasks;
@@ -159,8 +174,17 @@ async function setTags(app: App, task: TaskItem, tags: string[]) {
   });
 }
 
+async function ensureFolder(app: App, path: string) {
+  if (!app.vault.getAbstractFileByPath(path)) await app.vault.createFolder(path);
+}
+
+function taskFolderFor(status: string): string {
+  return CLOSED.includes(status) ? TASKS_INACTIVE : TASKS_ACTIVE;
+}
+
 // Status changes stamp time: started on first entry to Today, completed on Done
-// (cleared again when a task is reopened).
+// (cleared again when a task is reopened). Closed tasks are archived to
+// inactive/; renameFile keeps links intact.
 async function moveTask(app: App, task: TaskItem, status: string) {
   await app.fileManager.processFrontMatter(task.file, (fm) => {
     fm.status = status;
@@ -170,6 +194,53 @@ async function moveTask(app: App, task: TaskItem, status: string) {
     } else if (fm.completed) {
       fm.completed = '';
     }
+  });
+  const target = normalizePath(`${taskFolderFor(status)}/${task.file.name}`);
+  if (task.file.path !== target) {
+    await ensureFolder(app, taskFolderFor(status));
+    await app.fileManager.renameFile(task.file, target);
+  }
+}
+
+function listProjects(app: App): string[] {
+  const folder = app.vault.getAbstractFileByPath(PROJECTS_ACTIVE);
+  if (!(folder instanceof TFolder)) return [];
+  return folder.children
+    .filter((c): c is TFolder => c instanceof TFolder)
+    .map((f) => f.name)
+    .sort();
+}
+
+// A project is a folder under pm/projects/active/ with a folder note
+// (<slug>/<slug>.md) holding its metadata; everything else in it is scratch.
+async function createProject(app: App, slug: string) {
+  const dir = `${PROJECTS_ACTIVE}/${slug}`;
+  await ensureFolder(app, dir);
+  const notePath = normalizePath(`${dir}/${slug}.md`);
+  if (!app.vault.getAbstractFileByPath(notePath)) {
+    await app.vault.create(
+      notePath,
+      ['---', 'type: project', 'description:', `created: ${todayStr()}`, 'origin: human', 'tags: []', '---', ''].join('\n')
+    );
+  }
+}
+
+function loadTagRegistry(app: App): string[] {
+  const f = app.vault.getAbstractFileByPath(TAGS_FILE);
+  if (!(f instanceof TFile)) return [];
+  const raw = app.metadataCache.getFileCache(f)?.frontmatter?.tags;
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+  return list.filter((t): t is string => typeof t === 'string' && !!t.trim()).map((t) => t.trim());
+}
+
+async function addTagToRegistry(app: App, tag: string) {
+  let f = app.vault.getAbstractFileByPath(TAGS_FILE);
+  if (!(f instanceof TFile)) f = await app.vault.create(TAGS_FILE, '---\ntags: []\n---\n');
+  await app.fileManager.processFrontMatter(f as TFile, (fm) => {
+    const cur = Array.isArray(fm.tags)
+      ? fm.tags.filter((t: unknown): t is string => typeof t === 'string')
+      : [];
+    if (!cur.includes(tag)) fm.tags = [...cur, tag].sort();
   });
 }
 
@@ -183,6 +254,7 @@ async function createTask(
     project: string;
     size: string | null;
     tags: string[];
+    assignee: string;
   }
 ): Promise<TFile> {
   const id = nextId(tasks);
@@ -196,6 +268,8 @@ async function createTask(
     `project: ${fields.project}`,
     `size: ${fields.size ?? ''}`,
     `tags: [${fields.tags.join(', ')}]`,
+    `assignee: ${fields.assignee}`,
+    'origin: human',
     'due:',
     `created: ${today}`,
     `started: ${fields.status === 'today' ? today : ''}`,
@@ -203,7 +277,7 @@ async function createTask(
     '---',
     '',
   ];
-  const path = normalizePath(`${TASKS_FOLDER}/${id} ${sanitizeName(fields.title)}.md`);
+  const path = normalizePath(`${taskFolderFor(fields.status)}/${id} ${sanitizeName(fields.title)}.md`);
   return app.vault.create(path, lines.join('\n'));
 }
 
@@ -264,7 +338,9 @@ function projectMenu(
   if (allProjects.length) menu.addSeparator();
   menu.addItem((i) =>
     i.setTitle('New project…').setIcon('plus').onClick(() => {
-      new TextPromptModal(app, { title: 'New project', placeholder: 'e.g. citadel, personal', slug: true }, onPick).open();
+      new TextPromptModal(app, { title: 'New project', placeholder: 'e.g. citadel, personal', slug: true }, (slug) => {
+        void createProject(app, slug).then(() => onPick(slug));
+      }).open();
     })
   );
   menu.showAtMouseEvent(e.nativeEvent);
@@ -289,6 +365,7 @@ function tagsMenu(
   menu.addItem((i) =>
     i.setTitle('New tag…').setIcon('plus').onClick(() => {
       new TextPromptModal(app, { title: 'New tag', placeholder: 'e.g. bug, idea', slug: true }, (t) => {
+        void addTagToRegistry(app, t);
         if (!current.includes(t)) onChange([...current, t]);
       }).open();
     })
@@ -307,6 +384,27 @@ function sizeMenu(current: string | null, onPick: (size: string | null) => void,
   menu.showAtMouseEvent(e.nativeEvent);
 }
 
+function assigneeMenu(
+  app: App,
+  allAssignees: string[],
+  current: string,
+  onPick: (assignee: string) => void,
+  e: React.MouseEvent
+) {
+  e.stopPropagation();
+  const menu = new Menu();
+  for (const a of allAssignees) {
+    menu.addItem((i) => i.setTitle(a).setChecked(current === a).onClick(() => onPick(a)));
+  }
+  if (allAssignees.length) menu.addSeparator();
+  menu.addItem((i) =>
+    i.setTitle('Someone else…').setIcon('plus').onClick(() => {
+      new TextPromptModal(app, { title: 'Assignee', placeholder: 'e.g. harald, claude', slug: true }, onPick).open();
+    })
+  );
+  menu.showAtMouseEvent(e.nativeEvent);
+}
+
 /* ---------------- React UI ---------------- */
 
 function Card({
@@ -314,12 +412,14 @@ function Card({
   task,
   allProjects,
   allTags,
+  allAssignees,
   refresh,
 }: {
   app: App;
   task: TaskItem;
   allProjects: string[];
   allTags: string[];
+  allAssignees: string[];
   refresh: () => void;
 }) {
   const openNote = () => void app.workspace.getLeaf('tab').openFile(task.file);
@@ -378,6 +478,23 @@ function Card({
           title="Set project"
         >
           {task.project ?? 'no project'}
+        </span>
+        {task.origin === 'ai' && (
+          <span className="lb-origin-ai" title="Created by AI">
+            ai
+          </span>
+        )}
+        <span
+          className={`lb-assignee${task.assignee === DEFAULT_ASSIGNEE ? ' lb-fade-in' : ''}`}
+          onClick={(e) =>
+            assigneeMenu(app, allAssignees, task.assignee, async (a) => {
+              await setProp(app, task, 'assignee', a);
+              refresh();
+            }, e)
+          }
+          title={`Assignee: ${task.assignee}`}
+        >
+          @{task.assignee === DEFAULT_ASSIGNEE ? '' : task.assignee}
         </span>
         <span className="lb-move" onClick={statusMenu} title="Move to…">
           ⇄
@@ -442,6 +559,7 @@ function Column({
   tasks,
   allProjects,
   allTags,
+  allAssignees,
   refresh,
 }: {
   app: App;
@@ -449,6 +567,7 @@ function Column({
   tasks: TaskItem[];
   allProjects: string[];
   allTags: string[];
+  allAssignees: string[];
   refresh: () => void;
 }) {
   const [over, setOver] = useState(false);
@@ -478,7 +597,15 @@ function Column({
       </div>
       <div className="lb-column-body">
         {tasks.map((t) => (
-          <Card key={t.path} app={app} task={t} allProjects={allProjects} allTags={allTags} refresh={refresh} />
+          <Card
+            key={t.path}
+            app={app}
+            task={t}
+            allProjects={allProjects}
+            allTags={allTags}
+            allAssignees={allAssignees}
+            refresh={refresh}
+          />
         ))}
       </div>
     </div>
@@ -490,6 +617,7 @@ function QuickAdd({
   tasks,
   allProjects,
   allTags,
+  allAssignees,
   onClose,
   refresh,
 }: {
@@ -497,6 +625,7 @@ function QuickAdd({
   tasks: TaskItem[];
   allProjects: string[];
   allTags: string[];
+  allAssignees: string[];
   onClose: () => void;
   refresh: () => void;
 }) {
@@ -506,6 +635,7 @@ function QuickAdd({
   const [project, setProject] = useState<string | null>(null);
   const [size, setSize] = useState<string | null>(null);
   const [tags, setTagsState] = useState<string[]>([]);
+  const [assignee, setAssignee] = useState(DEFAULT_ASSIGNEE);
   const [missingProject, setMissingProject] = useState(false);
 
   const submit = async () => {
@@ -515,7 +645,7 @@ function QuickAdd({
       new Notice('Pick a project — every task needs one');
       return;
     }
-    await createTask(app, tasks, { title: title.trim(), status, priority, project, size, tags });
+    await createTask(app, tasks, { title: title.trim(), status, priority, project, size, tags, assignee });
     new Notice(`Created in ${COLUMN_LABELS[status]}`);
     refresh();
     onClose();
@@ -586,6 +716,9 @@ function QuickAdd({
           <button className="lb-pill" onClick={(e) => tagsMenu(app, allTags, tags, setTagsState, e)}>
             {tags.length ? tags.join(', ') : 'Tags'}
           </button>
+          <button className="lb-pill" onClick={(e) => assigneeMenu(app, allAssignees, assignee, setAssignee, e)}>
+            @{assignee}
+          </button>
         </div>
         <div className="lb-modal-actions">
           <span className="lb-modal-kbd">↵ to create · esc to close</span>
@@ -601,7 +734,7 @@ function QuickAdd({
 function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, setTick] = useState(0);
   const [adding, setAdding] = useState(false);
-  const [showDone, setShowDone] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
   const [conditions, setConditions] = useState<Conditions>({});
   const [activeView, setActiveView] = useState('All');
   const [views, setViews] = useState<SavedView[]>(plugin.settings.views);
@@ -620,11 +753,26 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   }, [app, refresh]);
 
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
+  // Canonical sources (project folders, tags.md) unioned with values in use,
+  // so legacy values stay pickable/filterable.
   const allProjects = useMemo(
-    () => [...new Set(tasks.map((t) => t.project).filter((p): p is string => !!p))].sort(),
+    () =>
+      [
+        ...new Set([
+          ...listProjects(app),
+          ...tasks.map((t) => t.project).filter((p): p is string => !!p),
+        ]),
+      ].sort(),
+    [app, tick, tasks]
+  );
+  const allTags = useMemo(
+    () => [...new Set([...loadTagRegistry(app), ...tasks.flatMap((t) => t.tags)])].sort(),
+    [app, tick, tasks]
+  );
+  const allAssignees = useMemo(
+    () => [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
     [tasks]
   );
-  const allTags = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort(), [tasks]);
 
   const fieldValues: Record<FilterField, string[]> = useMemo(
     () => ({
@@ -633,8 +781,10 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       priority: [...PRIORITIES, ...(tasks.some((t) => !t.priority) ? ['none'] : [])],
       size: [...SIZES, ...(tasks.some((t) => !t.size) ? ['none'] : [])],
       status: [...COLUMNS],
+      assignee: allAssignees,
+      origin: ['human', 'ai'],
     }),
-    [tasks, allProjects, allTags]
+    [tasks, allProjects, allTags, allAssignees]
   );
 
   const persistViews = (next: SavedView[]) => {
@@ -680,7 +830,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   };
 
   const visible = tasks.filter((t) => matchesConditions(t, conditions));
-  const columns = COLUMNS.filter((c) => showDone || c !== 'done');
+  const columns = COLUMNS.filter((c) => showClosed || !CLOSED.includes(c));
   const filtered = hasConditions(conditions);
   const valueLabel = (field: FilterField, v: string) =>
     field === 'status' ? COLUMN_LABELS[v] ?? v : v;
@@ -724,8 +874,8 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             Filter{filtered ? ' •' : ''}
           </button>
           <label className="lb-toggle">
-            <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
-            Done
+            <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
+            Closed
           </label>
           <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
             + New
@@ -778,6 +928,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
               status={c}
               allProjects={allProjects}
               allTags={allTags}
+              allAssignees={allAssignees}
               refresh={refresh}
               tasks={visible
                 .filter((t) => t.status === c)
@@ -791,6 +942,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             tasks={tasks}
             allProjects={allProjects}
             allTags={allTags}
+            allAssignees={allAssignees}
             onClose={() => setAdding(false)}
             refresh={refresh}
           />
