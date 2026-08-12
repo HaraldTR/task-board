@@ -34,7 +34,12 @@
 
   /* shape */
   --lb-radius: 6px; /* cards, pills, badges */
-  --lb-radius-chip: 9px; /* rounded chips: tags, project */
+  --lb-radius-chip: 9px; /* rounded chips: project */
+
+  /* card controls (priority / size / tags / move share this chrome) */
+  --lb-control-h: 17px;
+  --lb-control-radius: 5px;
+  --lb-control-font: 11px;
 }
 
 /* dark themes: near-black surfaces, lifted grey borders for contrast */
@@ -284,12 +289,12 @@
   font-variant-numeric: tabular-nums;
 }
 .lb-tag {
-  font-size: 11px;
+  font-size: var(--lb-control-font);
   font-weight: 400;
   border: 1px solid var(--lb-border);
-  border-radius: 5px;
+  border-radius: var(--lb-control-radius);
   padding: 0 5px;
-  line-height: 17px;
+  line-height: var(--lb-control-h);
   color: var(--lb-text-muted);
   max-width: 100px;
   overflow: hidden;
@@ -300,21 +305,27 @@
   color: var(--lb-text);
   background: var(--lb-hover);
 }
+/* glyph-only controls (+ / ⇄) need extra size+weight to match letter badges */
+.lb-tag-add {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
 .lb-fade-in {
   opacity: 0;
   transition: opacity 0.1s;
 }
 .lb-card:hover .lb-fade-in {
-  opacity: 0.7;
+  opacity: 1;
 }
 /* size: letter badge */
 .lb-size {
-  font-size: 11px;
+  font-size: var(--lb-control-font);
   font-weight: 400;
   border: 1px solid var(--lb-border);
-  border-radius: 5px;
+  border-radius: var(--lb-control-radius);
   padding: 0 5px;
-  line-height: 17px;
+  line-height: var(--lb-control-h);
   color: var(--lb-text-muted);
   cursor: pointer;
   flex-shrink: 0;
@@ -329,11 +340,12 @@
 /* move button: bottom-right, revealed on hover, same chrome as other controls */
 .lb-move {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--lb-text-muted);
   border: 1px solid var(--lb-border);
-  border-radius: 5px;
-  line-height: 17px;
+  border-radius: var(--lb-control-radius);
+  line-height: 16px;
   padding: 0 5px;
   flex-shrink: 0;
   opacity: 0;

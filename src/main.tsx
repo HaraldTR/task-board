@@ -553,7 +553,7 @@ function Card({
           </span>
         ))}
         <span
-          className="lb-tag lb-fade-in"
+          className="lb-tag lb-tag-add lb-fade-in"
           onClick={(e) =>
             tagsMenu(app, allTags, task.tags, async (tags) => {
               await setTags(app, task, tags);
