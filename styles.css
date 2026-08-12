@@ -45,7 +45,7 @@
 /* dark themes: near-black surfaces, lifted grey borders for contrast */
 .theme-dark .lb-view {
   --lb-surface: #0a0a0c;
-  --lb-surface-2: #1d1d24; /* lanes: lighter than cards for contrast */
+  --lb-surface-2: #26262e; /* lanes: clearly lighter than app bg and cards */
   --lb-border: #565664;
   --lb-border-hover: #8a8a9a;
   --lb-title: #f2f2f4;
