@@ -357,6 +357,59 @@ class TextPromptModal extends Modal {
   }
 }
 
+class SaveViewModal extends Modal {
+  private icon: string | null;
+
+  constructor(
+    app: App,
+    private opts: { title: string; initialName?: string; initialIcon?: string | null },
+    private onSubmit: (name: string, icon: string | null) => void
+  ) {
+    super(app);
+    this.icon = opts.initialIcon ?? null;
+  }
+
+  onOpen() {
+    this.titleEl.setText(this.opts.title);
+    const input = this.contentEl.createEl('input', { type: 'text', placeholder: 'View name…' });
+    input.style.width = '100%';
+    if (this.opts.initialName) input.value = this.opts.initialName;
+
+    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
+    const buttons = new Map<string, HTMLElement>();
+    const paint = () => {
+      for (const [ic, el] of buttons) el.toggleClass('lb-icon-selected', this.icon === ic);
+    };
+    for (const ic of VIEW_ICONS) {
+      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
+      setIcon(b, ic);
+      b.addEventListener('click', () => {
+        this.icon = this.icon === ic ? null : ic;
+        paint();
+      });
+      buttons.set(ic, b);
+    }
+    paint();
+
+    const submit = () => {
+      const v = input.value.trim();
+      if (v) this.onSubmit(v, this.icon);
+      this.close();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+    });
+    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const btn = row.createEl('button', { text: 'Save', cls: 'mod-cta' });
+    btn.addEventListener('click', submit);
+    window.setTimeout(() => input.focus(), 10);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 function projectMenu(
   app: App,
   allProjects: string[],
@@ -922,8 +975,8 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   };
 
   const saveViewPrompt = () => {
-    new TextPromptModal(app, { title: 'Save view as…', placeholder: 'e.g. Citadel P0/P1' }, (name) => {
-      persistViews([...views.filter((v) => v.name !== name), { name, conditions }]);
+    new SaveViewModal(app, { title: 'Save view as…' }, (name, icon) => {
+      persistViews([...views.filter((v) => v.name !== name), { name, conditions, icon: icon ?? undefined }]);
       setActiveView(name);
     }).open();
   };
@@ -941,34 +994,14 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const viewContextMenu = (v: SavedView, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const pillRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const menu = new Menu();
     menu.addItem((i) =>
-      i.setTitle('Rename…').setIcon('pencil').onClick(() => {
-        new TextPromptModal(
+      i.setTitle('Edit…').setIcon('pencil').onClick(() => {
+        new SaveViewModal(
           app,
-          { title: 'Rename view', placeholder: 'View name…', initial: v.name, cta: 'Save' },
-          (name) => updateView(v.name, { name })
+          { title: 'Edit view', initialName: v.name, initialIcon: v.icon ?? null },
+          (name, icon) => updateView(v.name, { name, icon: icon ?? undefined })
         ).open();
-      })
-    );
-    menu.addItem((i) =>
-      i.setTitle('Change icon…').setIcon('image').onClick(() => {
-        const iconMenu = new Menu();
-        // Force the HTML menu: macOS native menus can't render lucide icons.
-        (iconMenu as unknown as { setUseNativeMenu?: (b: boolean) => void }).setUseNativeMenu?.(false);
-        for (const ic of VIEW_ICONS) {
-          iconMenu.addItem((j) =>
-            j.setTitle(ic).setIcon(ic).setChecked(v.icon === ic).onClick(() => updateView(v.name, { icon: ic }))
-          );
-        }
-        if (v.icon) {
-          iconMenu.addSeparator();
-          iconMenu.addItem((j) =>
-            j.setTitle('Remove icon').setIcon('x').onClick(() => updateView(v.name, { icon: undefined }))
-          );
-        }
-        iconMenu.showAtPosition({ x: pillRect.left, y: pillRect.bottom + 4 });
       })
     );
     menu.addSeparator();

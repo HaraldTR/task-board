@@ -25,6 +25,7 @@
   /* borders */
   --lb-border: var(--background-modifier-border); /* cards, buttons, chips, dividers */
   --lb-border-hover: var(--lb-gray);
+  --lb-active-border: var(--lb-indigo); /* selected pills */
 
   /* text */
   --lb-title: var(--text-normal);
@@ -48,6 +49,7 @@
   --lb-surface-2: #26262e; /* lanes: clearly lighter than app bg and cards */
   --lb-border: #565664;
   --lb-border-hover: #8a8a9a;
+  --lb-active-border: color-mix(in srgb, var(--lb-indigo) 45%, white);
   --lb-title: #f2f2f4;
 }
 
@@ -118,9 +120,9 @@
   color: var(--lb-text);
 }
 .lb-pill-active {
-  background: var(--lb-hover);
+  background: color-mix(in srgb, var(--lb-indigo) 15%, transparent);
   color: var(--lb-text);
-  border-color: var(--lb-indigo);
+  border-color: var(--lb-active-border);
 }
 
 /* ---------- board ---------- */
@@ -487,6 +489,37 @@
 .lb-pill-required {
   border-color: var(--lb-orange);
   color: var(--lb-orange);
+}
+
+/* save-view modal icon picker (renders in document body — Obsidian vars only) */
+.lb-icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.lb-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: none;
+  padding: 0;
+}
+.lb-icon-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.lb-icon-selected {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
 }
 
 /* ---------- quick add (Linear-style) ---------- */
