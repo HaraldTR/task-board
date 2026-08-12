@@ -670,6 +670,10 @@
   .lb-card {
     padding: 8px 10px;
   }
+  .lb-title {
+    font-size: 16px;
+    line-height: 1.35;
+  }
   .lb-card-top,
   .lb-meta {
     gap: 10px;
