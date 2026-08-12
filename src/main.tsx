@@ -496,19 +496,21 @@ function Card({
             ai
           </span>
         )}
-        <span
-          className="lb-avatar"
-          style={{ background: avatarColor(task.assignee) }}
-          onClick={(e) =>
-            assigneeMenu(app, allAssignees, task.assignee, async (a) => {
-              await setProp(app, task, 'assignee', a);
-              refresh();
-            }, e)
-          }
-          title={`Assignee: ${task.assignee}`}
-        >
-          {task.assignee.charAt(0).toUpperCase()}
-        </span>
+        {task.assignee !== DEFAULT_ASSIGNEE && (
+          <span
+            className="lb-avatar"
+            style={{ background: avatarColor(task.assignee) }}
+            onClick={(e) =>
+              assigneeMenu(app, allAssignees, task.assignee, async (a) => {
+                await setProp(app, task, 'assignee', a);
+                refresh();
+              }, e)
+            }
+            title={`Assignee: ${task.assignee}`}
+          >
+            {task.assignee.charAt(0).toUpperCase()}
+          </span>
+        )}
       </div>
       <div className="lb-title">{task.title}</div>
       <div className="lb-meta">
