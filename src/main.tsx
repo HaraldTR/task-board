@@ -941,6 +941,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const viewContextMenu = (v: SavedView, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const pillRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const menu = new Menu();
     menu.addItem((i) =>
       i.setTitle('Rename…').setIcon('pencil').onClick(() => {
@@ -952,8 +953,10 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       })
     );
     menu.addItem((i) =>
-      i.setTitle('Change icon…').setIcon('image').onClick((evt) => {
+      i.setTitle('Change icon…').setIcon('image').onClick(() => {
         const iconMenu = new Menu();
+        // Force the HTML menu: macOS native menus can't render lucide icons.
+        (iconMenu as unknown as { setUseNativeMenu?: (b: boolean) => void }).setUseNativeMenu?.(false);
         for (const ic of VIEW_ICONS) {
           iconMenu.addItem((j) =>
             j.setTitle(ic).setIcon(ic).setChecked(v.icon === ic).onClick(() => updateView(v.name, { icon: ic }))
@@ -965,7 +968,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             j.setTitle('Remove icon').setIcon('x').onClick(() => updateView(v.name, { icon: undefined }))
           );
         }
-        iconMenu.showAtMouseEvent(evt instanceof MouseEvent ? evt : e.nativeEvent);
+        iconMenu.showAtPosition({ x: pillRect.left, y: pillRect.bottom + 4 });
       })
     );
     menu.addSeparator();
@@ -1000,16 +1003,6 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
               >
                 {v.icon && <LucideIcon name={v.icon} />}
                 {v.name}
-                <span
-                  className="lb-view-x"
-                  title="Delete view"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteView(v.name);
-                  }}
-                >
-                  ×
-                </span>
               </button>
             ))}
           </div>
