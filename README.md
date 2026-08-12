@@ -1,7 +1,10 @@
 # linear-board
 
 Linear-style task board plugin for this vault. Tasks are one note each in
-`projects/tasks/` with frontmatter fields (`status`, `priority`, `tag`, `due`).
+`projects/tasks/` with frontmatter fields (`status`, `priority`, `project`
+(mandatory), `tags` (free-form list), `size` (XS–XL), `due`, `created`,
+`started` (auto-set on first move to Today), `completed` (auto-set on Done,
+cleared on reopen)). Saved filter views live in the plugin's `data.json`.
 
 ## Build & install (any machine)
 
