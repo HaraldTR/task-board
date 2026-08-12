@@ -174,10 +174,10 @@
 /* high-contrast near-black cards in dark themes */
 .theme-dark .lb-card {
   background: #0a0a0c;
-  border-color: #2a2a30;
+  border-color: #45454e;
 }
 .theme-dark .lb-card:hover {
-  border-color: #52525c;
+  border-color: #6e6e7a;
 }
 .theme-dark .lb-card .lb-title {
   color: #f2f2f4;
@@ -279,7 +279,7 @@
 /* size: letter badge (midway scale: ~15% over v0.4.1) */
 .lb-size {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 400;
   border: 1px solid var(--background-modifier-border);
   border-radius: 5px;
   padding: 0 5px;
