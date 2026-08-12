@@ -10,6 +10,7 @@ import {
   Setting,
   TFile,
   TFolder,
+  ViewStateResult,
   WorkspaceLeaf,
   normalizePath,
   setIcon,
@@ -18,10 +19,13 @@ import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'r
 import { Root, createRoot } from 'react-dom/client';
 
 const VIEW_TYPE = 'linear-board-view';
+const PROJECTS_VIEW_TYPE = 'linear-projects-view';
+const PROJECT_VIEW_TYPE = 'linear-project-view';
 const TASKS_FOLDER = 'pm/tasks';
 const TASKS_ACTIVE = 'pm/tasks/active';
 const TASKS_INACTIVE = 'pm/tasks/inactive';
 const PROJECTS_ACTIVE = 'pm/projects/active';
+const PROJECTS_INACTIVE = 'pm/projects/inactive';
 const TAGS_FILE = 'pm/tags.md';
 const DEFAULT_ASSIGNEE = 'harald';
 
@@ -97,6 +101,21 @@ const VIEW_ICONS = [
   'bookmark',
   'heart',
   'rocket',
+];
+
+const PROJECT_ICONS = [...VIEW_ICONS, 'package', 'map', 'music', 'book', 'users', 'wrench', 'globe', 'leaf'];
+
+const PROJECT_COLORS = [
+  '#5e6ad2',
+  '#4ea7fc',
+  '#26b5ce',
+  '#27ae60',
+  '#f2c94c',
+  '#f2994a',
+  '#eb5757',
+  '#e84393',
+  '#9b51e0',
+  '#8a8f98',
 ];
 
 function matchesConditions(t: TaskItem, conds: Conditions): boolean {
@@ -236,6 +255,101 @@ function listProjects(app: App): string[] {
 interface ProjectInfo {
   icon: string | null;
   color: string | null;
+}
+
+interface Project {
+  slug: string;
+  file: TFile | null; // null = folder exists but folder note is missing (malformed)
+  description: string;
+  icon: string | null;
+  color: string | null;
+  created: string | null;
+}
+
+function loadProjects(app: App): Project[] {
+  const out: Project[] = [];
+  const folder = app.vault.getAbstractFileByPath(PROJECTS_ACTIVE);
+  if (!(folder instanceof TFolder)) return out;
+  for (const child of folder.children) {
+    if (!(child instanceof TFolder)) continue;
+    const note = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${child.name}/${child.name}.md`);
+    if (note instanceof TFile) {
+      const fm = app.metadataCache.getFileCache(note)?.frontmatter ?? {};
+      out.push({
+        slug: child.name,
+        file: note,
+        description: typeof fm.description === 'string' ? fm.description : '',
+        icon: typeof fm.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null,
+        color: typeof fm.color === 'string' && fm.color.trim() ? fm.color.trim() : null,
+        created: fm.created ? String(fm.created) : null,
+      });
+    } else {
+      out.push({ slug: child.name, file: null, description: '', icon: null, color: null, created: null });
+    }
+  }
+  return out.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+// The single writer for project structure: guarantees folder + folder note
+// with complete frontmatter, creating or normalizing as needed.
+async function writeProjectNote(
+  app: App,
+  slug: string,
+  fields: { description: string; icon: string | null; color: string | null }
+): Promise<TFile> {
+  const dir = `${PROJECTS_ACTIVE}/${slug}`;
+  await ensureFolder(app, dir);
+  const notePath = normalizePath(`${dir}/${slug}.md`);
+  const existing = app.vault.getAbstractFileByPath(notePath);
+  if (existing instanceof TFile) {
+    await app.fileManager.processFrontMatter(existing, (fm) => {
+      fm.type = 'project';
+      fm.description = fields.description;
+      fm.icon = fields.icon ?? '';
+      fm.color = fields.color ?? '';
+      if (!fm.created) fm.created = todayStr();
+      if (!fm.origin) fm.origin = 'human';
+      if (!fm.tags) fm.tags = [];
+    });
+    return existing;
+  }
+  return app.vault.create(
+    notePath,
+    [
+      '---',
+      'type: project',
+      `description: ${fields.description}`,
+      `icon: ${fields.icon ?? ''}`,
+      `color: "${fields.color ?? ''}"`,
+      `created: ${todayStr()}`,
+      'origin: human',
+      'tags: []',
+      '---',
+      '',
+    ].join('\n')
+  );
+}
+
+// Renames folder + folder note and re-points every task's project field.
+async function renameProject(app: App, oldSlug: string, newSlug: string) {
+  const dir = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${oldSlug}`);
+  if (!(dir instanceof TFolder)) return;
+  await app.fileManager.renameFile(dir, normalizePath(`${PROJECTS_ACTIVE}/${newSlug}`));
+  const note = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${newSlug}/${oldSlug}.md`);
+  if (note instanceof TFile) {
+    await app.fileManager.renameFile(note, normalizePath(`${PROJECTS_ACTIVE}/${newSlug}/${newSlug}.md`));
+  }
+  for (const t of loadTasks(app)) {
+    if (t.project === oldSlug) await setProp(app, t, 'project', newSlug);
+  }
+}
+
+async function archiveProject(app: App, slug: string) {
+  await ensureFolder(app, PROJECTS_INACTIVE);
+  const dir = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}`);
+  if (dir instanceof TFolder) {
+    await app.fileManager.renameFile(dir, normalizePath(`${PROJECTS_INACTIVE}/${slug}`));
+  }
 }
 
 // icon/color come from the project folder note's frontmatter (icon: lucide
@@ -465,6 +579,110 @@ class SaveViewModal extends Modal {
     const btn = row.createEl('button', { text: 'Save', cls: 'mod-cta' });
     btn.addEventListener('click', submit);
     window.setTimeout(() => input.focus(), 10);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// Create/edit a project through code so the folder + folder note structure is
+// always correct. Renaming re-points all tasks.
+class ProjectModal extends Modal {
+  private name: string;
+  private description: string;
+  private icon: string | null;
+  private color: string | null;
+
+  constructor(app: App, private existing: Project | null, private onDone: () => void) {
+    super(app);
+    this.name = existing?.slug ?? '';
+    this.description = existing?.description ?? '';
+    this.icon = existing?.icon ?? null;
+    this.color = existing?.color ?? null;
+  }
+
+  onOpen() {
+    this.modalEl.addClass('lb-edit-modal');
+    this.titleEl.setText(this.existing ? `Edit project: ${this.existing.slug}` : 'New project');
+
+    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Project name (becomes folder slug)…' });
+    name.style.width = '100%';
+    name.value = this.name;
+    name.addEventListener('input', () => (this.name = name.value));
+
+    const desc = this.contentEl.createEl('textarea', {
+      cls: 'lb-proj-desc-input',
+      attr: { placeholder: 'One-line description…', rows: '2' },
+    });
+    desc.value = this.description;
+    desc.addEventListener('input', () => (this.description = desc.value));
+
+    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
+    const iconBtns = new Map<string, HTMLElement>();
+    const paintIcons = () => {
+      for (const [ic, el] of iconBtns) el.toggleClass('lb-icon-selected', this.icon === ic);
+    };
+    for (const ic of PROJECT_ICONS) {
+      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
+      setIcon(b, ic);
+      b.addEventListener('click', () => {
+        this.icon = this.icon === ic ? null : ic;
+        paintIcons();
+      });
+      iconBtns.set(ic, b);
+    }
+    paintIcons();
+
+    const swatchRow = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
+    const swatches = new Map<string, HTMLElement>();
+    const custom = createEl('input', { type: 'text', attr: { placeholder: '#hex' } });
+    const paintSwatches = () => {
+      for (const [c, el] of swatches) el.toggleClass('lb-swatch-selected', this.color === c);
+      if (custom.value !== (this.color ?? '')) custom.value = this.color ?? '';
+    };
+    for (const c of PROJECT_COLORS) {
+      const b = swatchRow.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
+      b.style.background = c;
+      b.addEventListener('click', () => {
+        this.color = this.color === c ? null : c;
+        paintSwatches();
+      });
+      swatches.set(c, b);
+    }
+    custom.addClass('lb-swatch-custom');
+    swatchRow.appendChild(custom);
+    custom.addEventListener('input', () => {
+      this.color = custom.value.trim() || null;
+      for (const [c, el] of swatches) el.toggleClass('lb-swatch-selected', this.color === c);
+    });
+    paintSwatches();
+
+    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const save = actions.createEl('button', { text: this.existing ? 'Save' : 'Create project', cls: 'mod-cta' });
+    save.addEventListener('click', () => void this.save());
+  }
+
+  async save() {
+    const slug = this.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[\\/:|#^\[\]"*?<>]/g, '');
+    if (!slug) {
+      new Notice('Project needs a name');
+      return;
+    }
+    if (this.existing) {
+      if (slug !== this.existing.slug) await renameProject(this.app, this.existing.slug, slug);
+    } else if (this.app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}`)) {
+      new Notice(`Project "${slug}" already exists`);
+      return;
+    }
+    await writeProjectNote(this.app, slug, {
+      description: this.description.trim(),
+      icon: this.icon,
+      color: this.color,
+    });
+    new Notice(this.existing ? `${slug} updated` : `Project ${slug} created`);
+    this.onDone();
+    this.close();
   }
 
   onClose() {
@@ -1001,6 +1219,7 @@ function QuickAdd({
   allProjects,
   allTags,
   allAssignees,
+  fixedProject,
   onClose,
   refresh,
 }: {
@@ -1009,6 +1228,7 @@ function QuickAdd({
   allProjects: string[];
   allTags: string[];
   allAssignees: string[];
+  fixedProject?: string;
   onClose: () => void;
   refresh: () => void;
 }) {
@@ -1016,7 +1236,7 @@ function QuickAdd({
   const [desc, setDesc] = useState('');
   const [status, setStatus] = useState('today');
   const [priority, setPriority] = useState<string | null>(null);
-  const [project, setProject] = useState<string | null>(null);
+  const [project, setProject] = useState<string | null>(fixedProject ?? null);
   const [size, setSize] = useState<string | null>(null);
   const [tags, setTagsState] = useState<string[]>([]);
   const [assignee, setAssignee] = useState(DEFAULT_ASSIGNEE);
@@ -1166,6 +1386,272 @@ function QuickAdd({
   );
 }
 
+function useVaultTick(app: App): [number, () => void] {
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+  useEffect(() => {
+    const refs = [
+      app.metadataCache.on('changed', refresh),
+      app.vault.on('delete', refresh),
+      app.vault.on('rename', refresh),
+      app.vault.on('create', refresh),
+    ];
+    return () => refs.forEach((r) => app.metadataCache.offref(r));
+  }, [app, refresh]);
+  return [tick, refresh];
+}
+
+function pickerLists(app: App, tasks: TaskItem[]): PickerLists {
+  return {
+    allProjects: [
+      ...new Set([...listProjects(app), ...tasks.map((t) => t.project).filter((p): p is string => !!p)]),
+    ].sort(),
+    allTags: [...new Set([...loadTagRegistry(app), ...tasks.flatMap((t) => t.tags)])].sort(),
+    allAssignees: [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
+  };
+}
+
+function ProjectChip({ project, size }: { project: Project; size?: 'lg' }) {
+  return (
+    <span
+      className={`lb-project${size === 'lg' ? ' lb-project-lg' : ''}`}
+      style={project.color ? ({ '--proj-color': project.color } as React.CSSProperties) : undefined}
+    >
+      {project.icon && <LucideIcon name={project.icon} />}
+      <span className="lb-project-name">{project.slug}</span>
+    </span>
+  );
+}
+
+function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+  const [tick, refresh] = useVaultTick(app);
+  const projects = useMemo(() => loadProjects(app), [app, tick]);
+  const tasks = useMemo(() => loadTasks(app), [app, tick]);
+
+  const counts = (slug: string) => {
+    const mine = tasks.filter((t) => t.project === slug);
+    const done = mine.filter((t) => t.status === 'done').length;
+    const open = mine.filter((t) => !CLOSED.includes(t.status)).length;
+    const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
+    return { open, done, pct };
+  };
+
+  const rowMenu = (p: Project, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i.setTitle('Edit…').setIcon('pencil').onClick(() => new ProjectModal(app, p, refresh).open())
+    );
+    menu.addItem((i) =>
+      i.setTitle('Open note').setIcon('file-text').onClick(() => {
+        if (p.file) void app.workspace.getLeaf('tab').openFile(p.file);
+      })
+    );
+    menu.addSeparator();
+    menu.addItem((i) =>
+      i.setTitle('Archive').setIcon('archive').onClick(async () => {
+        await archiveProject(app, p.slug);
+        new Notice(`${p.slug} archived`);
+        refresh();
+      })
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  return (
+    <StrictMode>
+      <div className="lb-root">
+        <div className="lb-header">
+          <span className="lb-brand">Projects</span>
+          <button className="lb-pill" onClick={() => void plugin.activateView()}>
+            Board
+          </button>
+          <button className="mod-cta lb-new" onClick={() => new ProjectModal(app, null, refresh).open()}>
+            + New project
+          </button>
+        </div>
+        <div className="lb-projects">
+          <div className="lb-projrow lb-projrow-head">
+            <span className="lb-projname-col">Name</span>
+            <span className="lb-projdesc">Description</span>
+            <span className="lb-projcount">Open</span>
+            <span className="lb-projcount">Done</span>
+            <span className="lb-projcount">%</span>
+            <span className="lb-projcount lb-projcreated">Created</span>
+          </div>
+          {projects.map((p) => {
+            const c = counts(p.slug);
+            return (
+              <div
+                key={p.slug}
+                className="lb-projrow"
+                onClick={() => void plugin.openProject(p.slug)}
+                onContextMenu={(e) => rowMenu(p, e)}
+              >
+                <span className="lb-projname-col">
+                  <ProjectChip project={p} />
+                </span>
+                <span className="lb-projdesc">
+                  {p.file === null ? (
+                    <button
+                      className="lb-pill lb-pill-required"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void writeProjectNote(app, p.slug, { description: '', icon: null, color: null }).then(refresh);
+                      }}
+                    >
+                      Missing folder note — fix structure
+                    </button>
+                  ) : (
+                    p.description
+                  )}
+                </span>
+                <span className="lb-projcount">{c.open}</span>
+                <span className="lb-projcount">{c.done}</span>
+                <span className="lb-projcount">{c.pct}%</span>
+                <span className="lb-projcount lb-projcreated">{p.created ?? ''}</span>
+              </div>
+            );
+          })}
+          {projects.length === 0 && (
+            <div className="lb-empty">No projects yet — create the first one.</div>
+          )}
+        </div>
+      </div>
+    </StrictMode>
+  );
+}
+
+function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin; slug: string }) {
+  const [tick, refresh] = useVaultTick(app);
+  const [adding, setAdding] = useState(false);
+  const allTasks = useMemo(() => loadTasks(app), [app, tick]);
+  const projects = useMemo(() => loadProjects(app), [app, tick]);
+  const project = projects.find((p) => p.slug === slug);
+  const lists = useMemo(() => pickerLists(app, allTasks), [app, allTasks]);
+  const mine = allTasks
+    .filter((t) => t.project === slug)
+    .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id));
+
+  if (!slug || !project) {
+    return (
+      <StrictMode>
+        <div className="lb-root">
+          <div className="lb-empty">Project "{slug}" not found under {PROJECTS_ACTIVE}/.</div>
+        </div>
+      </StrictMode>
+    );
+  }
+
+  const taskRowMenu = (t: TaskItem, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i.setTitle('Edit…').setIcon('pencil').onClick(() => new TaskEditModal(app, t, lists).open())
+    );
+    menu.addSeparator();
+    menu.addItem((i) =>
+      i.setTitle('Delete').setIcon('trash').onClick(async () => {
+        await app.vault.trash(t.file, true);
+        refresh();
+      })
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  const sections = COLUMNS.map((c) => ({ status: c, items: mine.filter((t) => t.status === c) })).filter(
+    (s) => s.items.length > 0
+  );
+
+  return (
+    <StrictMode>
+      <div className="lb-root">
+        <div className="lb-proj-head">
+          <div className="lb-proj-title-row">
+            <ProjectChip project={project} size="lg" />
+            <div className="lb-proj-actions">
+              <button className="lb-pill" onClick={() => new ProjectModal(app, project, refresh).open()}>
+                Edit
+              </button>
+              <button
+                className="lb-pill"
+                onClick={() => project.file && void app.workspace.getLeaf('tab').openFile(project.file)}
+              >
+                Open note
+              </button>
+              <button
+                className="lb-pill"
+                onClick={async () => {
+                  await archiveProject(app, slug);
+                  new Notice(`${slug} archived`);
+                  void plugin.openProjectsView();
+                }}
+              >
+                Archive
+              </button>
+              <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
+                + New task
+              </button>
+            </div>
+          </div>
+          {project.description && <div className="lb-proj-desc">{project.description}</div>}
+        </div>
+        <div className="lb-proj-body">
+          {sections.map((s) => (
+            <div key={s.status}>
+              <div className="lb-section-title">
+                <span className={`lb-dot lb-dot-${s.status}`} />
+                {COLUMN_LABELS[s.status]}
+                <span className="lb-count">{s.items.length}</span>
+              </div>
+              {s.items.map((t) => (
+                <div
+                  key={t.path}
+                  className="lb-taskrow"
+                  onClick={() => void app.workspace.getLeaf('tab').openFile(t.file)}
+                  onContextMenu={(e) => taskRowMenu(t, e)}
+                >
+                  <span className="lb-id">{t.id}</span>
+                  <span className="lb-taskrow-title">{t.title}</span>
+                  {t.priority && (
+                    <span className={`lb-priority lb-priority-${t.priority.toLowerCase()}`}>
+                      {[1, 2, 3, 4].map((n) => (
+                        <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[t.priority!] ? ' lb-bar-on' : ''}`} />
+                      ))}
+                    </span>
+                  )}
+                  {t.size && <span className="lb-size">{t.size}</span>}
+                  {t.due && <span className="lb-due">{t.due}</span>}
+                  {t.assignee !== DEFAULT_ASSIGNEE && (
+                    <span className="lb-avatar" style={{ background: avatarColor(t.assignee) }}>
+                      {t.assignee.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+          {mine.length === 0 && <div className="lb-empty">No tasks in this project yet.</div>}
+        </div>
+        {adding && (
+          <QuickAdd
+            app={app}
+            tasks={allTasks}
+            allProjects={lists.allProjects}
+            allTags={lists.allTags}
+            allAssignees={lists.allAssignees}
+            fixedProject={slug}
+            onClose={() => setAdding(false)}
+            refresh={refresh}
+          />
+        )}
+      </div>
+    </StrictMode>
+  );
+}
+
 function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, setTick] = useState(0);
   const [adding, setAdding] = useState(false);
@@ -1299,6 +1785,9 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       <div className="lb-root">
         <div className="lb-header">
           <span className="lb-brand">Tasks</span>
+          <button className="lb-pill" onClick={() => void plugin.openProjectsView()}>
+            Projects
+          </button>
           <div className="lb-pills">
             <button
               className={`lb-pill lb-filter-pill${activeView === 'All' ? ' lb-pill-active' : ''}`}
@@ -1469,6 +1958,81 @@ class LinearBoardView extends ItemView {
   }
 }
 
+class ProjectsListView extends ItemView {
+  root: Root | null = null;
+
+  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+    super(leaf);
+  }
+
+  getViewType() {
+    return PROJECTS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return 'Projects';
+  }
+  getIcon() {
+    return 'package';
+  }
+
+  async onOpen() {
+    this.contentEl.empty();
+    this.contentEl.addClass('lb-view');
+    this.root = createRoot(this.contentEl);
+    this.root.render(<ProjectsApp app={this.app} plugin={this.plugin} />);
+  }
+
+  async onClose() {
+    this.root?.unmount();
+    this.root = null;
+  }
+}
+
+class ProjectDetailView extends ItemView {
+  root: Root | null = null;
+  slug = '';
+
+  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+    super(leaf);
+  }
+
+  getViewType() {
+    return PROJECT_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return this.slug || 'Project';
+  }
+  getIcon() {
+    return 'package';
+  }
+
+  async setState(state: unknown, result: ViewStateResult) {
+    this.slug = (state as { slug?: string } | null)?.slug ?? '';
+    this.renderApp();
+    await super.setState(state, result);
+  }
+
+  getState() {
+    return { slug: this.slug };
+  }
+
+  renderApp() {
+    this.root?.render(<ProjectApp app={this.app} plugin={this.plugin} slug={this.slug} />);
+  }
+
+  async onOpen() {
+    this.contentEl.empty();
+    this.contentEl.addClass('lb-view');
+    this.root = createRoot(this.contentEl);
+    this.renderApp();
+  }
+
+  async onClose() {
+    this.root?.unmount();
+    this.root = null;
+  }
+}
+
 export default class LinearBoardPlugin extends Plugin {
   settings: LinearBoardSettings = { ...DEFAULT_SETTINGS };
 
@@ -1476,6 +2040,8 @@ export default class LinearBoardPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
     this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf, this));
+    this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsListView(leaf, this));
+    this.registerView(PROJECT_VIEW_TYPE, (leaf) => new ProjectDetailView(leaf, this));
     this.addSettingTab(new LinearBoardSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
@@ -1491,6 +2057,12 @@ export default class LinearBoardPlugin extends Plugin {
       id: 'open-board',
       name: 'Open task board',
       callback: () => void this.activateView(),
+    });
+
+    this.addCommand({
+      id: 'open-projects',
+      name: 'Open projects',
+      callback: () => void this.openProjectsView(),
     });
 
     this.addCommand({
@@ -1530,6 +2102,30 @@ export default class LinearBoardPlugin extends Plugin {
     }
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openProjectsView() {
+    const existing = this.app.workspace.getLeavesOfType(PROJECTS_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.setViewState({ type: PROJECTS_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openProject(slug: string) {
+    const existing = this.app.workspace
+      .getLeavesOfType(PROJECT_VIEW_TYPE)
+      .find((l) => (l.view as ProjectDetailView).slug === slug);
+    if (existing) {
+      this.app.workspace.revealLeaf(existing);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.setViewState({ type: PROJECT_VIEW_TYPE, active: true, state: { slug } });
     this.app.workspace.revealLeaf(leaf);
   }
 
