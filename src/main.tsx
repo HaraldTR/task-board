@@ -520,9 +520,14 @@ function Card({
               refresh();
             }, e)
           }
-          title="Set size"
+          title={task.size ? `Size: ${task.size}` : 'Set size'}
         >
-          {task.size ?? '◇'}
+          {SIZES.map((s, i) => (
+            <span
+              key={s}
+              className={`lb-bar${task.size && i <= SIZES.indexOf(task.size as (typeof SIZES)[number]) ? ' lb-bar-on' : ''}`}
+            />
+          ))}
         </span>
         {task.tags.map((tag) => (
           <span

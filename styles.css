@@ -265,20 +265,33 @@
 .lb-card:hover .lb-fade-in {
   opacity: 0.7;
 }
+/* size as ascending level bars (Linear estimate style) */
 .lb-size {
-  font-size: 10px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+  padding: 3px 5px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  padding: 0 4px;
-  line-height: 15px;
-  color: var(--text-muted);
+  border-radius: 5px;
   cursor: pointer;
   flex-shrink: 0;
 }
 .lb-size:hover {
-  color: var(--text-normal);
   background: var(--background-modifier-hover);
+}
+.lb-bar {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--background-modifier-border);
+}
+.lb-bar:nth-child(1) { height: 4px; }
+.lb-bar:nth-child(2) { height: 6px; }
+.lb-bar:nth-child(3) { height: 8px; }
+.lb-bar:nth-child(4) { height: 10px; }
+.lb-bar:nth-child(5) { height: 12px; }
+.lb-bar-on {
+  background: var(--lb-blue);
 }
 .lb-due {
   color: var(--text-muted);
@@ -299,13 +312,13 @@
   background: var(--background-modifier-hover);
 }
 
-/* priority badge */
+/* priority badge (+30% vs v0.4) */
 .lb-priority {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
-  border-radius: 4px;
-  padding: 0 4px;
-  line-height: 15px;
+  border-radius: 5px;
+  padding: 0 6px;
+  line-height: 20px;
   cursor: pointer;
   color: var(--text-faint);
   border: 1px solid var(--background-modifier-border);
@@ -482,5 +495,62 @@
   .lb-move,
   .lb-fade-in {
     opacity: 1;
+  }
+
+  /* 2x tap targets for everything interactive on a card */
+  .lb-card {
+    padding: 8px 10px;
+  }
+  .lb-card-top,
+  .lb-meta {
+    gap: 10px;
+  }
+  .lb-priority {
+    font-size: 20px;
+    line-height: 30px;
+    padding: 0 9px;
+    border-radius: 7px;
+  }
+  .lb-size {
+    height: 30px;
+    padding: 4px 8px;
+    gap: 3px;
+    border-radius: 7px;
+  }
+  .lb-bar {
+    width: 5px;
+    border-radius: 2px;
+  }
+  .lb-bar:nth-child(1) { height: 8px; }
+  .lb-bar:nth-child(2) { height: 11px; }
+  .lb-bar:nth-child(3) { height: 14px; }
+  .lb-bar:nth-child(4) { height: 17px; }
+  .lb-bar:nth-child(5) { height: 20px; }
+  .lb-tag {
+    font-size: 14px;
+    line-height: 28px;
+    padding: 0 12px;
+    border-radius: 15px;
+  }
+  .lb-project {
+    font-size: 14px;
+    line-height: 26px;
+    padding: 0 11px;
+    border-radius: 14px;
+    max-width: 40vw;
+  }
+  .lb-assignee,
+  .lb-id,
+  .lb-due {
+    font-size: 14px;
+  }
+  .lb-move {
+    font-size: 22px;
+    padding: 2px 10px;
+  }
+  .lb-origin-ai {
+    font-size: 13px;
+    line-height: 20px;
+    padding: 0 6px;
   }
 }
