@@ -996,7 +996,9 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                 key={v.name}
                 className={`lb-pill lb-filter-pill${activeView === v.name ? ' lb-pill-active' : ''}`}
                 onClick={() => applyView(v)}
+                onContextMenu={(e) => viewContextMenu(v, e)}
               >
+                {v.icon && <LucideIcon name={v.icon} />}
                 {v.name}
                 <span
                   className="lb-view-x"
