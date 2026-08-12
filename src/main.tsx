@@ -31,6 +31,7 @@ const PRIORITY_LABELS: Record<string, string> = {
   P2: 'Medium',
   P3: 'Low',
 };
+const SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const;
 
 interface TaskItem {
   file: TFile;
@@ -39,8 +40,69 @@ interface TaskItem {
   title: string;
   status: string;
   priority: string | null;
-  tag: string | null;
+  project: string | null;
+  tags: string[];
+  size: string | null;
   due: string | null;
+  started: string | null;
+  completed: string | null;
+}
+
+/* ---------------- filters ---------------- */
+
+const FILTER_FIELDS = [
+  { key: 'project', label: 'Project' },
+  { key: 'tags', label: 'Tags' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'size', label: 'Size' },
+  { key: 'status', label: 'Status' },
+] as const;
+type FilterField = (typeof FILTER_FIELDS)[number]['key'];
+// OR within a field, AND across fields. 'none' matches tasks missing the field.
+type Conditions = Partial<Record<FilterField, string[]>>;
+interface SavedView {
+  name: string;
+  conditions: Conditions;
+}
+
+function matchesConditions(t: TaskItem, conds: Conditions): boolean {
+  for (const f of FILTER_FIELDS) {
+    const values = conds[f.key];
+    if (!values || values.length === 0) continue;
+    if (f.key === 'tags') {
+      if (!t.tags.some((tag) => values.includes(tag))) return false;
+    } else {
+      const v =
+        f.key === 'status' ? t.status : ((t[f.key] as string | null) ?? 'none');
+      if (!values.includes(v)) return false;
+    }
+  }
+  return true;
+}
+
+function hasConditions(conds: Conditions): boolean {
+  return FILTER_FIELDS.some((f) => (conds[f.key]?.length ?? 0) > 0);
+}
+
+/* ---------------- data ---------------- */
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function parseProject(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!s) return null;
+  const wikilink = s.match(/^\[\[([^\]|]+)(\|[^\]]*)?\]\]$/);
+  if (wikilink) return wikilink[1].split('/').pop()?.trim() || null;
+  return s;
+}
+
+function parseTags(fm: Record<string, unknown>): string[] {
+  const raw = fm.tags ?? fm.tag;
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+  return [...new Set(list.filter((t): t is string => typeof t === 'string' && !!t.trim()).map((t) => t.trim()))];
 }
 
 function loadTasks(app: App): TaskItem[] {
@@ -57,8 +119,15 @@ function loadTasks(app: App): TaskItem[] {
       title: file.basename.replace(/^T-\d+\s*/, ''),
       status: typeof fm.status === 'string' && fm.status ? fm.status : 'backlog',
       priority: typeof fm.priority === 'string' && fm.priority ? fm.priority : null,
-      tag: typeof fm.tag === 'string' && fm.tag.trim() ? fm.tag.trim() : null,
+      project: parseProject(fm.project),
+      tags: parseTags(fm),
+      size:
+        typeof fm.size === 'string' && SIZES.includes(fm.size.toUpperCase() as (typeof SIZES)[number])
+          ? fm.size.toUpperCase()
+          : null,
       due: fm.due ? String(fm.due) : null,
+      started: fm.started ? String(fm.started) : null,
+      completed: fm.completed ? String(fm.completed) : null,
     });
   }
   return tasks;
@@ -83,23 +152,54 @@ async function setProp(app: App, task: TaskItem, key: string, value: string | nu
   });
 }
 
+async function setTags(app: App, task: TaskItem, tags: string[]) {
+  await app.fileManager.processFrontMatter(task.file, (fm) => {
+    fm.tags = tags;
+    delete fm.tag;
+  });
+}
+
+// Status changes stamp time: started on first entry to Today, completed on Done
+// (cleared again when a task is reopened).
+async function moveTask(app: App, task: TaskItem, status: string) {
+  await app.fileManager.processFrontMatter(task.file, (fm) => {
+    fm.status = status;
+    if (status === 'today' && !fm.started) fm.started = todayStr();
+    if (status === 'done') {
+      if (!fm.completed) fm.completed = todayStr();
+    } else if (fm.completed) {
+      fm.completed = '';
+    }
+  });
+}
+
 async function createTask(
   app: App,
   tasks: TaskItem[],
-  fields: { title: string; status: string; priority: string | null; tag: string | null }
+  fields: {
+    title: string;
+    status: string;
+    priority: string | null;
+    project: string;
+    size: string | null;
+    tags: string[];
+  }
 ): Promise<TFile> {
   const id = nextId(tasks);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const lines = [
     '---',
     `id: ${id}`,
     'type: task',
     `status: ${fields.status}`,
     `priority: ${fields.priority ?? ''}`,
-    `tag: ${fields.tag ?? ''}`,
-    'project:',
+    `project: ${fields.project}`,
+    `size: ${fields.size ?? ''}`,
+    `tags: [${fields.tags.join(', ')}]`,
     'due:',
     `created: ${today}`,
+    `started: ${fields.status === 'today' ? today : ''}`,
+    `completed: ${fields.status === 'done' ? today : ''}`,
     '---',
     '',
   ];
@@ -111,23 +211,27 @@ function priorityRank(p: string | null): number {
   return p ? PRIORITIES.indexOf(p as (typeof PRIORITIES)[number]) : PRIORITIES.length;
 }
 
-class TagPromptModal extends Modal {
-  onSubmit: (tag: string) => void;
+/* ---------------- prompts & menus ---------------- */
 
-  constructor(app: App, onSubmit: (tag: string) => void) {
+class TextPromptModal extends Modal {
+  constructor(
+    app: App,
+    private opts: { title: string; placeholder: string; slug?: boolean },
+    private onSubmit: (value: string) => void
+  ) {
     super(app);
-    this.onSubmit = onSubmit;
   }
 
   onOpen() {
-    this.titleEl.setText('New tag');
+    this.titleEl.setText(this.opts.title);
     const input = this.contentEl.createEl('input', {
       type: 'text',
-      placeholder: 'e.g. citadel, personal, music',
+      placeholder: this.opts.placeholder,
     });
     input.style.width = '100%';
     const submit = () => {
-      const v = input.value.trim().toLowerCase().replace(/\s+/g, '-');
+      let v = input.value.trim();
+      if (this.opts.slug) v = v.toLowerCase().replace(/\s+/g, '-');
       if (v) this.onSubmit(v);
       this.close();
     };
@@ -145,28 +249,60 @@ class TagPromptModal extends Modal {
   }
 }
 
-function tagMenu(
+function projectMenu(
   app: App,
-  allTags: string[],
+  allProjects: string[],
   current: string | null,
-  onPick: (tag: string | null) => void,
+  onPick: (project: string) => void,
   e: React.MouseEvent
 ) {
   e.stopPropagation();
   const menu = new Menu();
+  for (const p of allProjects) {
+    menu.addItem((i) => i.setTitle(p).setChecked(current === p).onClick(() => onPick(p)));
+  }
+  if (allProjects.length) menu.addSeparator();
+  menu.addItem((i) =>
+    i.setTitle('New project…').setIcon('plus').onClick(() => {
+      new TextPromptModal(app, { title: 'New project', placeholder: 'e.g. citadel, personal', slug: true }, onPick).open();
+    })
+  );
+  menu.showAtMouseEvent(e.nativeEvent);
+}
+
+// Toggles one tag per open; reopen to toggle more.
+function tagsMenu(
+  app: App,
+  allTags: string[],
+  current: string[],
+  onChange: (tags: string[]) => void,
+  e: React.MouseEvent
+) {
+  e.stopPropagation();
+  const toggle = (tag: string) =>
+    onChange(current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]);
+  const menu = new Menu();
   for (const tag of allTags) {
-    menu.addItem((i) =>
-      i.setTitle(tag).setChecked(current === tag).onClick(() => onPick(tag))
-    );
+    menu.addItem((i) => i.setTitle(tag).setChecked(current.includes(tag)).onClick(() => toggle(tag)));
   }
   if (allTags.length) menu.addSeparator();
   menu.addItem((i) =>
     i.setTitle('New tag…').setIcon('plus').onClick(() => {
-      new TagPromptModal(app, (t) => onPick(t)).open();
+      new TextPromptModal(app, { title: 'New tag', placeholder: 'e.g. bug, idea', slug: true }, (t) => {
+        if (!current.includes(t)) onChange([...current, t]);
+      }).open();
     })
   );
-  if (current) {
-    menu.addItem((i) => i.setTitle('Remove tag').setIcon('x').onClick(() => onPick(null)));
+  menu.showAtMouseEvent(e.nativeEvent);
+}
+
+function sizeMenu(current: string | null, onPick: (size: string | null) => void, e: React.MouseEvent) {
+  e.stopPropagation();
+  const menu = new Menu();
+  for (const s of [...SIZES, null]) {
+    menu.addItem((i) =>
+      i.setTitle(s ?? 'No size').setChecked(current === s).onClick(() => onPick(s))
+    );
   }
   menu.showAtMouseEvent(e.nativeEvent);
 }
@@ -176,11 +312,13 @@ function tagMenu(
 function Card({
   app,
   task,
+  allProjects,
   allTags,
   refresh,
 }: {
   app: App;
   task: TaskItem;
+  allProjects: string[];
   allTags: string[];
   refresh: () => void;
 }) {
@@ -212,7 +350,7 @@ function Card({
           .setTitle(COLUMN_LABELS[s])
           .setChecked(task.status === s)
           .onClick(async () => {
-            await setProp(app, task, 'status', s);
+            await moveTask(app, task, s);
             refresh();
           })
       );
@@ -227,6 +365,24 @@ function Card({
       onDragStart={(e) => e.dataTransfer.setData('text/task-path', task.path)}
       onClick={openNote}
     >
+      <div className="lb-card-top">
+        <span className="lb-id">{task.id}</span>
+        <span
+          className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
+          onClick={(e) =>
+            projectMenu(app, allProjects, task.project, async (p) => {
+              await setProp(app, task, 'project', p);
+              refresh();
+            }, e)
+          }
+          title="Set project"
+        >
+          {task.project ?? 'no project'}
+        </span>
+        <span className="lb-move" onClick={statusMenu} title="Move to…">
+          ⇄
+        </span>
+      </div>
       <div className="lb-title">{task.title}</div>
       <div className="lb-meta">
         <span
@@ -236,23 +392,45 @@ function Card({
         >
           {task.priority ?? '·'}
         </span>
-        <span className="lb-id">{task.id}</span>
         <span
-          className={`lb-tag${task.tag ? '' : ' lb-tag-empty'}`}
+          className={`lb-size${task.size ? '' : ' lb-fade-in'}`}
           onClick={(e) =>
-            tagMenu(app, allTags, task.tag, async (t) => {
-              await setProp(app, task, 'tag', t);
+            sizeMenu(task.size, async (s) => {
+              await setProp(app, task, 'size', s);
               refresh();
             }, e)
           }
-          title="Set tag"
+          title="Set size"
         >
-          {task.tag ?? '+'}
+          {task.size ?? '◇'}
+        </span>
+        {task.tags.map((tag) => (
+          <span
+            key={tag}
+            className="lb-tag"
+            onClick={(e) =>
+              tagsMenu(app, allTags, task.tags, async (tags) => {
+                await setTags(app, task, tags);
+                refresh();
+              }, e)
+            }
+          >
+            {tag}
+          </span>
+        ))}
+        <span
+          className="lb-tag lb-fade-in"
+          onClick={(e) =>
+            tagsMenu(app, allTags, task.tags, async (tags) => {
+              await setTags(app, task, tags);
+              refresh();
+            }, e)
+          }
+          title="Add tag"
+        >
+          +
         </span>
         {task.due && <span className="lb-due">{task.due}</span>}
-        <span className="lb-move" onClick={statusMenu} title="Move to…">
-          ⇄
-        </span>
       </div>
     </div>
   );
@@ -262,12 +440,14 @@ function Column({
   app,
   status,
   tasks,
+  allProjects,
   allTags,
   refresh,
 }: {
   app: App;
   status: string;
   tasks: TaskItem[];
+  allProjects: string[];
   allTags: string[];
   refresh: () => void;
 }) {
@@ -286,7 +466,7 @@ function Column({
         const path = e.dataTransfer.getData('text/task-path');
         const task = loadTasks(app).find((t) => t.path === path);
         if (task && task.status !== status) {
-          await setProp(app, task, 'status', status);
+          await moveTask(app, task, status);
           refresh();
         }
       }}
@@ -298,7 +478,7 @@ function Column({
       </div>
       <div className="lb-column-body">
         {tasks.map((t) => (
-          <Card key={t.path} app={app} task={t} allTags={allTags} refresh={refresh} />
+          <Card key={t.path} app={app} task={t} allProjects={allProjects} allTags={allTags} refresh={refresh} />
         ))}
       </div>
     </div>
@@ -308,12 +488,14 @@ function Column({
 function QuickAdd({
   app,
   tasks,
+  allProjects,
   allTags,
   onClose,
   refresh,
 }: {
   app: App;
   tasks: TaskItem[];
+  allProjects: string[];
   allTags: string[];
   onClose: () => void;
   refresh: () => void;
@@ -321,11 +503,19 @@ function QuickAdd({
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState('today');
   const [priority, setPriority] = useState<string | null>(null);
-  const [tag, setTag] = useState<string | null>(null);
+  const [project, setProject] = useState<string | null>(null);
+  const [size, setSize] = useState<string | null>(null);
+  const [tags, setTagsState] = useState<string[]>([]);
+  const [missingProject, setMissingProject] = useState(false);
 
   const submit = async () => {
     if (!title.trim()) return;
-    await createTask(app, tasks, { title: title.trim(), status, priority, tag });
+    if (!project) {
+      setMissingProject(true);
+      new Notice('Pick a project — every task needs one');
+      return;
+    }
+    await createTask(app, tasks, { title: title.trim(), status, priority, project, size, tags });
     new Notice(`Created in ${COLUMN_LABELS[status]}`);
     refresh();
     onClose();
@@ -370,6 +560,17 @@ function QuickAdd({
           }}
         />
         <div className="lb-modal-row">
+          <button
+            className={`lb-pill${missingProject && !project ? ' lb-pill-required' : ''}`}
+            onClick={(e) =>
+              projectMenu(app, allProjects, project, (p) => {
+                setProject(p);
+                setMissingProject(false);
+              }, e)
+            }
+          >
+            {project ?? 'Project *'}
+          </button>
           <button className="lb-pill" onClick={statusPill}>
             <span className={`lb-dot lb-dot-${status}`} /> {COLUMN_LABELS[status]}
           </button>
@@ -379,11 +580,11 @@ function QuickAdd({
             </span>{' '}
             {priority ? PRIORITY_LABELS[priority] : 'Priority'}
           </button>
-          <button
-            className="lb-pill"
-            onClick={(e) => tagMenu(app, allTags, tag, setTag, e)}
-          >
-            {tag ?? 'Tag'}
+          <button className="lb-pill" onClick={(e) => sizeMenu(size, setSize, e)}>
+            {size ?? 'Size'}
+          </button>
+          <button className="lb-pill" onClick={(e) => tagsMenu(app, allTags, tags, setTagsState, e)}>
+            {tags.length ? tags.join(', ') : 'Tags'}
           </button>
         </div>
         <div className="lb-modal-actions">
@@ -397,12 +598,14 @@ function QuickAdd({
   );
 }
 
-function BoardApp({ app }: { app: App }) {
+function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, setTick] = useState(0);
   const [adding, setAdding] = useState(false);
-  const [tagFilter, setTagFilter] = useState<string>('ALL'); // ALL | UNTAGGED | <tag>
-  const [priorityFilter, setPriorityFilter] = useState('');
   const [showDone, setShowDone] = useState(false);
+  const [conditions, setConditions] = useState<Conditions>({});
+  const [activeView, setActiveView] = useState('All');
+  const [views, setViews] = useState<SavedView[]>(plugin.settings.views);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const refresh = useCallback(() => setTick((n) => n + 1), []);
 
@@ -417,29 +620,70 @@ function BoardApp({ app }: { app: App }) {
   }, [app, refresh]);
 
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
-  const allTags = useMemo(
-    () => [...new Set(tasks.map((t) => t.tag).filter((t): t is string => !!t))].sort(),
+  const allProjects = useMemo(
+    () => [...new Set(tasks.map((t) => t.project).filter((p): p is string => !!p))].sort(),
     [tasks]
   );
-  const hasUntagged = tasks.some((t) => !t.tag);
+  const allTags = useMemo(() => [...new Set(tasks.flatMap((t) => t.tags))].sort(), [tasks]);
 
-  const visible = tasks.filter(
-    (t) =>
-      (tagFilter === 'ALL' ||
-        (tagFilter === 'UNTAGGED' ? !t.tag : t.tag === tagFilter)) &&
-      (!priorityFilter || t.priority === priorityFilter)
+  const fieldValues: Record<FilterField, string[]> = useMemo(
+    () => ({
+      project: [...allProjects, ...(tasks.some((t) => !t.project) ? ['none'] : [])],
+      tags: allTags,
+      priority: [...PRIORITIES, ...(tasks.some((t) => !t.priority) ? ['none'] : [])],
+      size: [...SIZES, ...(tasks.some((t) => !t.size) ? ['none'] : [])],
+      status: [...COLUMNS],
+    }),
+    [tasks, allProjects, allTags]
   );
+
+  const persistViews = (next: SavedView[]) => {
+    setViews(next);
+    void plugin.saveViews(next);
+  };
+
+  const applyView = (v: SavedView) => {
+    setConditions(JSON.parse(JSON.stringify(v.conditions)));
+    setActiveView(v.name);
+  };
+
+  const toggleCond = (field: FilterField, value: string) => {
+    setConditions((prev) => {
+      const cur = prev[field] ?? [];
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+      return { ...prev, [field]: next };
+    });
+    setActiveView('');
+  };
+
+  const clearCond = (field: FilterField) => {
+    setConditions((prev) => ({ ...prev, [field]: [] }));
+    setActiveView('');
+  };
+
+  const clearAll = () => {
+    setConditions({});
+    setActiveView('All');
+    setFilterOpen(false);
+  };
+
+  const saveViewPrompt = () => {
+    new TextPromptModal(app, { title: 'Save view as…', placeholder: 'e.g. Citadel P0/P1' }, (name) => {
+      persistViews([...views.filter((v) => v.name !== name), { name, conditions }]);
+      setActiveView(name);
+    }).open();
+  };
+
+  const deleteView = (name: string) => {
+    persistViews(views.filter((v) => v.name !== name));
+    if (activeView === name) clearAll();
+  };
+
+  const visible = tasks.filter((t) => matchesConditions(t, conditions));
   const columns = COLUMNS.filter((c) => showDone || c !== 'done');
-
-  const pill = (key: string, label: string) => (
-    <button
-      key={key}
-      className={`lb-pill lb-filter-pill${tagFilter === key ? ' lb-pill-active' : ''}`}
-      onClick={() => setTagFilter(key)}
-    >
-      {label}
-    </button>
-  );
+  const filtered = hasConditions(conditions);
+  const valueLabel = (field: FilterField, v: string) =>
+    field === 'status' ? COLUMN_LABELS[v] ?? v : v;
 
   return (
     <StrictMode>
@@ -447,18 +691,38 @@ function BoardApp({ app }: { app: App }) {
         <div className="lb-header">
           <span className="lb-brand">Tasks</span>
           <div className="lb-pills">
-            {pill('ALL', 'All')}
-            {allTags.map((t) => pill(t, t))}
-            {hasUntagged && pill('UNTAGGED', 'untagged')}
-          </div>
-          <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
-            <option value="">Priority</option>
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p} · {PRIORITY_LABELS[p]}
-              </option>
+            <button
+              className={`lb-pill lb-filter-pill${activeView === 'All' ? ' lb-pill-active' : ''}`}
+              onClick={clearAll}
+            >
+              All
+            </button>
+            {views.map((v) => (
+              <button
+                key={v.name}
+                className={`lb-pill lb-filter-pill${activeView === v.name ? ' lb-pill-active' : ''}`}
+                onClick={() => applyView(v)}
+              >
+                {v.name}
+                <span
+                  className="lb-view-x"
+                  title="Delete view"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteView(v.name);
+                  }}
+                >
+                  ×
+                </span>
+              </button>
             ))}
-          </select>
+          </div>
+          <button
+            className={`lb-pill${filterOpen ? ' lb-pill-active' : ''}`}
+            onClick={() => setFilterOpen((o) => !o)}
+          >
+            Filter{filtered ? ' •' : ''}
+          </button>
           <label className="lb-toggle">
             <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
             Done
@@ -467,12 +731,52 @@ function BoardApp({ app }: { app: App }) {
             + New
           </button>
         </div>
+        {filterOpen && (
+          <div className="lb-filter-panel">
+            {FILTER_FIELDS.map((f) => (
+              <div key={f.key} className="lb-filter-field">
+                <div className="lb-filter-field-name">{f.label}</div>
+                {fieldValues[f.key].length === 0 && <div className="lb-filter-none">—</div>}
+                {fieldValues[f.key].map((v) => (
+                  <label key={v} className="lb-filter-option">
+                    <input
+                      type="checkbox"
+                      checked={(conditions[f.key] ?? []).includes(v)}
+                      onChange={() => toggleCond(f.key, v)}
+                    />
+                    {f.key === 'status' && <span className={`lb-dot lb-dot-${v}`} />}
+                    {valueLabel(f.key, v)}
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        {filtered && (
+          <div className="lb-cond-row">
+            {FILTER_FIELDS.filter((f) => (conditions[f.key]?.length ?? 0) > 0).map((f) => (
+              <span key={f.key} className="lb-cond">
+                <b>{f.label}</b>&nbsp;is {conditions[f.key]!.map((v) => valueLabel(f.key, v)).join(' or ')}
+                <span className="lb-cond-x" onClick={() => clearCond(f.key)}>
+                  ×
+                </span>
+              </span>
+            ))}
+            <button className="lb-pill" onClick={saveViewPrompt}>
+              Save view
+            </button>
+            <button className="lb-pill" onClick={clearAll}>
+              Clear
+            </button>
+          </div>
+        )}
         <div className="lb-board">
           {columns.map((c) => (
             <Column
               key={c}
               app={app}
               status={c}
+              allProjects={allProjects}
               allTags={allTags}
               refresh={refresh}
               tasks={visible
@@ -485,6 +789,7 @@ function BoardApp({ app }: { app: App }) {
           <QuickAdd
             app={app}
             tasks={tasks}
+            allProjects={allProjects}
             allTags={allTags}
             onClose={() => setAdding(false)}
             refresh={refresh}
@@ -497,10 +802,14 @@ function BoardApp({ app }: { app: App }) {
 
 /* ---------------- Obsidian plumbing ---------------- */
 
+interface LinearBoardSettings {
+  views: SavedView[];
+}
+
 class LinearBoardView extends ItemView {
   root: Root | null = null;
 
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
     super(leaf);
   }
 
@@ -518,7 +827,7 @@ class LinearBoardView extends ItemView {
     this.contentEl.empty();
     this.contentEl.addClass('lb-view');
     this.root = createRoot(this.contentEl);
-    this.root.render(<BoardApp app={this.app} />);
+    this.root.render(<BoardApp app={this.app} plugin={this.plugin} />);
   }
 
   async onClose() {
@@ -528,8 +837,12 @@ class LinearBoardView extends ItemView {
 }
 
 export default class LinearBoardPlugin extends Plugin {
+  settings: LinearBoardSettings = { views: [] };
+
   async onload() {
-    this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf));
+    this.settings = Object.assign({ views: [] }, await this.loadData());
+
+    this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf, this));
 
     this.addRibbonIcon('kanban-square', 'Open task board', () => void this.activateView());
 
@@ -538,6 +851,11 @@ export default class LinearBoardPlugin extends Plugin {
       name: 'Open task board',
       callback: () => void this.activateView(),
     });
+  }
+
+  async saveViews(views: SavedView[]) {
+    this.settings.views = views;
+    await this.saveData(this.settings);
   }
 
   async activateView() {
