@@ -1211,8 +1211,9 @@
     padding: 9px 4px;
   }
 
-  /* task-note banner: clear Obsidian mobile's floating view buttons */
+  /* task-note banner: clear Obsidian mobile's floating view buttons
+     (sidebar toggle + view actions occupy roughly the top 56px of content) */
   .lb-note-banner {
-    padding-top: 36px;
+    padding-top: 58px;
   }
 }
