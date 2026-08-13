@@ -109,6 +109,10 @@
   padding: 0 10px;
   font-size: var(--font-ui-smaller);
 }
+/* CSS-owned gap so flex-rendered buttons can't swallow the space */
+.lb-new-suffix {
+  margin-left: 4px;
+}
 
 /* ---------- task-note banner: row 1 navigation, row 2 field pills ----------
    Rows reuse .lb-header/.lb-header-top so spacing and nav placement match
