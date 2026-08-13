@@ -3,7 +3,8 @@
    Components below consume ONLY these tokens (plus Obsidian font vars);
    never hardcode colors/radii in component rules.
    ========================================================================== */
-.lb-view {
+.lb-view,
+.lb-note-banner {
   padding: 0;
   overflow: hidden;
   display: flex;
@@ -44,7 +45,8 @@
 }
 
 /* dark themes: near-black surfaces, lifted grey borders for contrast */
-.theme-dark .lb-view {
+.theme-dark .lb-view,
+.theme-dark .lb-note-banner {
   --lb-surface: #0a0a0c;
   --lb-surface-2: #26262e; /* lanes: clearly lighter than app bg and cards */
   --lb-border: #565664;
@@ -98,6 +100,25 @@
   height: 26px;
   padding: 0 10px;
   font-size: var(--font-ui-smaller);
+}
+
+/* ---------- task-note banner ---------- */
+.lb-note-banner {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lb-border);
+  background: var(--lb-surface-2);
+  font-size: var(--font-ui-smaller);
+}
+.lb-banner-spacer {
+  margin-left: auto;
+}
+/* hide Obsidian's raw Properties list on task notes — the banner replaces it */
+.lb-task-note .metadata-container {
+  display: none;
 }
 
 /* header row 1: no divider (row 2 carries it), tighter bottom padding */

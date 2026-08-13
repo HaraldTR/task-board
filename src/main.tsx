@@ -1,6 +1,7 @@
 import {
   App,
   ItemView,
+  MarkdownView,
   Menu,
   Modal,
   Notice,
@@ -1434,6 +1435,141 @@ function ProjectChip({ project, size }: { project: Project; size?: 'lg' }) {
   );
 }
 
+// Rendered above a task note's content, replacing the raw Properties list:
+// navigation back to board/project plus live-editing pills for every field.
+function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin; file: TFile }) {
+  const [tick, refresh] = useVaultTick(app);
+  const tasks = useMemo(() => loadTasks(app), [app, tick]);
+  const projects = useMemo(() => loadProjectInfos(app), [app, tick]);
+  const lists = useMemo(() => pickerLists(app, tasks), [app, tasks]);
+  const task = tasks.find((t) => t.path === file.path);
+  if (!task) return null;
+  const proj = task.project ? projects.get(task.project) : undefined;
+
+  const statusMenu = (e: React.MouseEvent) => {
+    const menu = new Menu();
+    for (const s of COLUMNS) {
+      menu.addItem((i) =>
+        i.setTitle(COLUMN_LABELS[s]).setChecked(task.status === s).onClick(async () => {
+          await moveTask(app, task, s);
+          refresh();
+        })
+      );
+    }
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  const priorityMenu = (e: React.MouseEvent) => {
+    const menu = new Menu();
+    for (const p of [...PRIORITIES, null]) {
+      menu.addItem((i) =>
+        i
+          .setTitle(p ? `${p} · ${PRIORITY_LABELS[p]}` : 'No priority')
+          .setChecked(task.priority === p)
+          .onClick(async () => {
+            await setProp(app, task, 'priority', p);
+            refresh();
+          })
+      );
+    }
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  const changeTags = (e: React.MouseEvent) =>
+    tagsMenu(app, lists.allTags, task.tags, async (tags) => {
+      await setTags(app, task, tags);
+      refresh();
+    }, e);
+
+  return (
+    <>
+      <button className="lb-pill" onClick={() => void plugin.activateView()} title="Open task board">
+        <LucideIcon name="kanban-square" />
+        Board
+      </button>
+      {task.project ? (
+        <span
+          className="lb-project"
+          style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+          onClick={() => void plugin.openProject(task.project!)}
+          title="Open project"
+        >
+          {proj?.icon && <LucideIcon name={proj.icon} />}
+          <span className="lb-project-name">{task.project}</span>
+        </span>
+      ) : (
+        <span
+          className="lb-project lb-project-empty"
+          onClick={(e) =>
+            projectMenu(app, lists.allProjects, null, async (p) => {
+              await setProp(app, task, 'project', p);
+              refresh();
+            }, e)
+          }
+        >
+          no project
+        </span>
+      )}
+      <span className="lb-id">{task.id}</span>
+      <button className="lb-pill" onClick={statusMenu} title="Status">
+        <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
+      </button>
+      <span
+        className={`lb-priority lb-priority-${(task.priority ?? 'none').toLowerCase()}`}
+        onClick={priorityMenu}
+        title={task.priority ? `${task.priority} · ${PRIORITY_LABELS[task.priority]}` : 'Set priority'}
+      >
+        {task.priority
+          ? [1, 2, 3, 4].map((n) => (
+              <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[task.priority!] ? ' lb-bar-on' : ''}`} />
+            ))
+          : [1, 2, 3].map((n) => <span key={n} className="lb-dash" />)}
+      </span>
+      <span
+        className="lb-size"
+        onClick={(e) =>
+          sizeMenu(task.size, async (s) => {
+            await setProp(app, task, 'size', s);
+            refresh();
+          }, e)
+        }
+        title={task.size ? `Size: ${task.size}` : 'Set size'}
+      >
+        {task.size ?? '◇'}
+      </span>
+      {task.tags.map((tag) => (
+        <span key={tag} className="lb-tag" onClick={changeTags}>
+          {tag}
+        </span>
+      ))}
+      <span className="lb-tag lb-tag-add" onClick={changeTags} title="Add tag">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M5 12h14" />
+          <path d="M12 5v14" />
+        </svg>
+      </span>
+      <button
+        className="lb-pill"
+        onClick={(e) =>
+          assigneeMenu(app, lists.allAssignees, task.assignee, async (a) => {
+            await setProp(app, task, 'assignee', a);
+            refresh();
+          }, e)
+        }
+        title="Assignee"
+      >
+        @{task.assignee}
+      </button>
+      {task.due && <span className="lb-due">Due {task.due}</span>}
+      <span className="lb-banner-spacer" />
+      <button className="lb-pill" onClick={() => new TaskEditModal(app, task, lists).open()}>
+        <LucideIcon name="pencil" />
+        Edit
+      </button>
+    </>
+  );
+}
+
 function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
@@ -2120,7 +2256,12 @@ export default class LinearBoardPlugin extends Plugin {
       if (mode === 'always' || (mode === 'mobile' && Platform.isMobile)) {
         void this.activateView();
       }
+      this.decorateMarkdownLeaves();
     });
+
+    this.registerEvent(this.app.workspace.on('layout-change', () => this.decorateMarkdownLeaves()));
+    this.registerEvent(this.app.workspace.on('file-open', () => this.decorateMarkdownLeaves()));
+    this.registerEvent(this.app.metadataCache.on('changed', () => this.decorateMarkdownLeaves()));
 
     this.addRibbonIcon('kanban-square', 'Open task board', () => void this.activateView());
     this.addRibbonIcon('package', 'Open projects', () => void this.openProjectsView());
@@ -2177,6 +2318,52 @@ export default class LinearBoardPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
+  // Task notes get a banner with navigation + field pills instead of the raw
+  // Properties list (hidden via the lb-task-note class).
+  decorateMarkdownLeaves() {
+    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+      const view = leaf.view;
+      if (view instanceof MarkdownView) this.decorateView(view);
+    }
+  }
+
+  decorateView(view: MarkdownView) {
+    const file = view.file;
+    const content = view.contentEl;
+    const isTask =
+      !!file &&
+      file.path.startsWith(TASKS_FOLDER + '/') &&
+      this.app.metadataCache.getFileCache(file)?.frontmatter?.type === 'task';
+    content.toggleClass('lb-task-note', isTask);
+    let banner = content.querySelector(':scope > .lb-note-banner') as
+      | (HTMLElement & { __lbRoot?: Root })
+      | null;
+    if (!isTask) {
+      banner?.__lbRoot?.unmount();
+      banner?.remove();
+      return;
+    }
+    if (!banner) {
+      banner = createDiv({ cls: 'lb-note-banner' }) as HTMLElement & { __lbRoot?: Root };
+      content.prepend(banner);
+      banner.__lbRoot = createRoot(banner);
+    }
+    banner.__lbRoot!.render(<NoteBanner app={this.app} plugin={this} file={file!} />);
+  }
+
+  removeBanners() {
+    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+      const content = leaf.view?.contentEl;
+      if (!content) continue;
+      const banner = content.querySelector(':scope > .lb-note-banner') as
+        | (HTMLElement & { __lbRoot?: Root })
+        | null;
+      banner?.__lbRoot?.unmount();
+      banner?.remove();
+      content.removeClass('lb-task-note');
+    }
+  }
+
   async openProjectsView() {
     const existing = this.app.workspace.getLeavesOfType(PROJECTS_VIEW_TYPE);
     if (existing.length > 0) {
@@ -2201,5 +2388,7 @@ export default class LinearBoardPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
-  onunload() {}
+  onunload() {
+    this.removeBanners();
+  }
 }
