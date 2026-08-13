@@ -1231,16 +1231,16 @@
     padding: 0 7px;
   }
   .lb-move svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
   .lb-tag-add {
     height: 24px;
     padding: 0 7px;
   }
   .lb-tag-add svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
   .lb-origin-ai {
     font-size: 13px;
@@ -1315,6 +1315,13 @@
   .lb-projrow {
     gap: 8px;
     padding: 9px 4px;
+  }
+  .lb-taskrow {
+    gap: 8px;
+    padding: 7px 4px;
+  }
+  .lb-taskrow .lb-id {
+    width: 44px;
   }
 
   /* task-note banner: clear Obsidian mobile's floating view buttons
