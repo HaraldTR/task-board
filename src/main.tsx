@@ -504,25 +504,75 @@ function loadProjectInfos(app: App): Map<string, ProjectInfo> {
 }
 
 
-function loadTagRegistry(app: App): string[] {
-  const f = app.vault.getAbstractFileByPath(TAGS_FILE);
-  if (!(f instanceof TFile)) return [];
-  const raw = app.metadataCache.getFileCache(f)?.frontmatter?.tags;
-  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-  return list.filter((t): t is string => typeof t === 'string' && !!t.trim()).map((t) => t.trim());
+interface TagDef {
+  name: string;
+  icon: string | null;
+  color: string | null;
 }
 
-async function removeTagFromRegistry(app: App, tag: string) {
+// Registry lives in pm/tags.md frontmatter under `registry:` as a list of
+// {name, icon, color}. Legacy plain-string `tags:` lists are read as defs.
+function loadTagRegistry(app: App): TagDef[] {
   const f = app.vault.getAbstractFileByPath(TAGS_FILE);
-  if (!(f instanceof TFile)) return;
-  await app.fileManager.processFrontMatter(f, (fm) => {
-    fm.tags = (Array.isArray(fm.tags) ? fm.tags : []).filter((t: unknown) => t !== tag);
+  if (!(f instanceof TFile)) return [];
+  const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+  const raw = fm?.registry ?? fm?.tags;
+  const list = Array.isArray(raw) ? raw : [];
+  const out: TagDef[] = [];
+  for (const item of list) {
+    if (typeof item === 'string' && item.trim()) {
+      out.push({ name: item.trim(), icon: null, color: null });
+    } else if (item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string') {
+      const o = item as { name: string; icon?: unknown; color?: unknown };
+      out.push({
+        name: o.name.trim(),
+        icon: typeof o.icon === 'string' && o.icon.trim() ? o.icon.trim() : null,
+        color: typeof o.color === 'string' && o.color.trim() ? o.color.trim() : null,
+      });
+    }
+  }
+  return out;
+}
+
+function registryNames(app: App): string[] {
+  return loadTagRegistry(app).map((d) => d.name);
+}
+
+async function saveTagRegistry(app: App, defs: TagDef[]) {
+  let f = app.vault.getAbstractFileByPath(TAGS_FILE);
+  if (!(f instanceof TFile)) f = await app.vault.create(TAGS_FILE, '---\nregistry: []\n---\n');
+  await app.fileManager.processFrontMatter(f as TFile, (fm) => {
+    fm.registry = [...defs]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((d) => ({ name: d.name, icon: d.icon ?? '', color: d.color ?? '' }));
+    delete fm.tags;
   });
 }
 
+async function addTagToRegistry(app: App, tag: string) {
+  const defs = loadTagRegistry(app);
+  if (!defs.some((d) => d.name === tag)) {
+    await saveTagRegistry(app, [...defs, { name: tag, icon: null, color: null }]);
+  }
+}
+
+async function upsertTagDef(app: App, def: TagDef) {
+  const defs = loadTagRegistry(app);
+  const rest = defs.filter((d) => d.name !== def.name);
+  await saveTagRegistry(app, [...rest, def]);
+}
+
+async function removeTagFromRegistry(app: App, tag: string) {
+  await saveTagRegistry(app, loadTagRegistry(app).filter((d) => d.name !== tag));
+}
+
 async function renameTagEverywhere(app: App, oldTag: string, newTag: string) {
-  await addTagToRegistry(app, newTag);
-  await removeTagFromRegistry(app, oldTag);
+  const defs = loadTagRegistry(app);
+  const old = defs.find((d) => d.name === oldTag);
+  await saveTagRegistry(app, [
+    ...defs.filter((d) => d.name !== oldTag && d.name !== newTag),
+    { name: newTag, icon: old?.icon ?? null, color: old?.color ?? null },
+  ]);
   for (const t of loadTasks(app)) {
     if (t.tags.includes(oldTag)) {
       await setTags(app, t, [...new Set(t.tags.map((x) => (x === oldTag ? newTag : x)))]);
@@ -535,17 +585,6 @@ async function deleteTagEverywhere(app: App, tag: string) {
   for (const t of loadTasks(app)) {
     if (t.tags.includes(tag)) await setTags(app, t, t.tags.filter((x) => x !== tag));
   }
-}
-
-async function addTagToRegistry(app: App, tag: string) {
-  let f = app.vault.getAbstractFileByPath(TAGS_FILE);
-  if (!(f instanceof TFile)) f = await app.vault.create(TAGS_FILE, '---\ntags: []\n---\n');
-  await app.fileManager.processFrontMatter(f as TFile, (fm) => {
-    const cur = Array.isArray(fm.tags)
-      ? fm.tags.filter((t: unknown): t is string => typeof t === 'string')
-      : [];
-    if (!cur.includes(tag)) fm.tags = [...cur, tag].sort();
-  });
 }
 
 async function createTask(
@@ -1760,7 +1799,7 @@ function pickerLists(app: App, tasks: TaskItem[]): PickerLists {
     allProjects: [
       ...new Set([...listProjects(app), ...tasks.map((t) => t.project).filter((p): p is string => !!p)]),
     ].sort(),
-    allTags: [...new Set([...loadTagRegistry(app), ...tasks.flatMap((t) => t.tags)])].sort(),
+    allTags: [...new Set([...registryNames(app), ...tasks.flatMap((t) => t.tags)])].sort(),
     allAssignees: [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
   };
 }
@@ -2493,7 +2532,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     [app, tick, tasks]
   );
   const allTags = useMemo(
-    () => [...new Set([...loadTagRegistry(app), ...tasks.flatMap((t) => t.tags)])].sort(),
+    () => [...new Set([...registryNames(app), ...tasks.flatMap((t) => t.tags)])].sort(),
     [app, tick, tasks]
   );
   const allAssignees = useMemo(
@@ -3012,7 +3051,7 @@ export default class LinearBoardPlugin extends Plugin {
             allProjects: [
               ...new Set([...listProjects(this.app), ...tasks.map((t) => t.project).filter((p): p is string => !!p)]),
             ].sort(),
-            allTags: [...new Set([...loadTagRegistry(this.app), ...tasks.flatMap((t) => t.tags)])].sort(),
+            allTags: [...new Set([...registryNames(this.app), ...tasks.flatMap((t) => t.tags)])].sort(),
             allAssignees: [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
           }).open();
         }
