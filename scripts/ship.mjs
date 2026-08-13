@@ -21,7 +21,7 @@ function resolveVault() {
 }
 
 const vault = resolveVault();
-const dest = join(vault, '.obsidian', 'plugins', 'linear-board');
+const dest = join(vault, '.obsidian', 'plugins', 'task-board');
 mkdirSync(dest, { recursive: true });
 for (const f of ['main.js', 'manifest.json', 'styles.css']) {
   cpSync(join(repo, f), join(dest, f));

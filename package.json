@@ -1,6 +1,6 @@
 {
-  "name": "linear-board",
-  "version": "0.19.0",
+  "name": "task-board",
+  "version": "0.19.1",
   "description": "Linear-style task management for Obsidian: spaces, projects, tasks, and tags as plain markdown",
   "main": "main.js",
   "type": "module",

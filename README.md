@@ -1,4 +1,4 @@
-# Linear Board
+# Task Board
 
 **Linear-style task management for Obsidian — spaces, projects, tasks, and tags, all stored as plain markdown you own.**
 
@@ -63,10 +63,10 @@ completed:             # stamped on Done, cleared on reopen
 
 Not yet in the community registry. Until then:
 
-1. **Manual**: copy `main.js`, `manifest.json`, `styles.css` from a release into `<vault>/.obsidian/plugins/linear-board/`, then enable it in Settings → Community plugins.
+1. **Manual**: copy `main.js`, `manifest.json`, `styles.css` from a release into `<vault>/.obsidian/plugins/task-board/`, then enable it in Settings → Community plugins.
 2. **BRAT**: add this repo in the BRAT plugin to track releases.
 
-On first run, set the **root folder** in Settings → Linear Board (defaults to `pm/`), then create your first space from the board header. Works on desktop and mobile.
+On first run, set the **root folder** in Settings → Task Board (defaults to `pm/`), then create your first space from the board header. Works on desktop and mobile.
 
 ## Settings
 

@@ -19,11 +19,11 @@ import {
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Root, createRoot } from 'react-dom/client';
 
-const VIEW_TYPE = 'linear-board-view';
-const PROJECTS_VIEW_TYPE = 'linear-projects-view';
-const PROJECT_VIEW_TYPE = 'linear-project-view';
-const SPACES_VIEW_TYPE = 'linear-spaces-view';
-const TAGS_VIEW_TYPE = 'linear-tags-view';
+const VIEW_TYPE = 'task-board-view';
+const PROJECTS_VIEW_TYPE = 'task-board-projects-view';
+const PROJECT_VIEW_TYPE = 'task-board-project-view';
+const SPACES_VIEW_TYPE = 'task-board-spaces-view';
+const TAGS_VIEW_TYPE = 'task-board-tags-view';
 
 // Overview tabs stay docked leftmost in this order; other tabs flow right.
 const PINNED_VIEW_ORDER = [SPACES_VIEW_TYPE, PROJECTS_VIEW_TYPE, VIEW_TYPE, TAGS_VIEW_TYPE];
@@ -1785,11 +1785,11 @@ function useVaultTick(app: App): [number, () => void] {
 
 // Active space is shared across all plugin views; changes broadcast via a
 // workspace event so every mounted view updates.
-function useActiveSpace(app: App, plugin: LinearBoardPlugin): string {
+function useActiveSpace(app: App, plugin: TaskBoardPlugin): string {
   const [space, setSpace] = useState(plugin.settings.activeSpace ?? '');
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ref = (app.workspace as any).on('linear-board:space-changed', () =>
+    const ref = (app.workspace as any).on('task-board:space-changed', () =>
       setSpace(plugin.settings.activeSpace ?? '')
     );
     return () => app.workspace.offref(ref);
@@ -1797,7 +1797,7 @@ function useActiveSpace(app: App, plugin: LinearBoardPlugin): string {
   return space;
 }
 
-function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: LinearBoardPlugin; space: string }) {
+function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: TaskBoardPlugin; space: string }) {
   const spaces = loadSpaces(app);
   const current = spaces.find((s) => s.slug === space);
   const openMenu = (e: React.MouseEvent) => {
@@ -1841,7 +1841,7 @@ function NavSeg({
   plugin,
   active,
 }: {
-  plugin: LinearBoardPlugin;
+  plugin: TaskBoardPlugin;
   active: 'spaces' | 'projects' | 'tasks' | 'tags';
 }) {
   return (
@@ -1933,7 +1933,7 @@ function ProjectChip({ project, size }: { project: Project; size?: 'lg' }) {
 
 // Rendered above a task note's content, replacing the raw Properties list:
 // navigation back to board/project plus live-editing pills for every field.
-function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin; file: TFile }) {
+function NoteBanner({ app, plugin, file }: { app: App; plugin: TaskBoardPlugin; file: TFile }) {
   const [tick, refresh] = useVaultTick(app);
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
   const projects = useMemo(() => loadProjectInfos(app), [app, tick]);
@@ -2242,7 +2242,7 @@ class TagEditModal extends Modal {
 
 // Tags overview: registry ∪ in-use tags with counts, icons, colors and
 // cross-vault rename/delete.
-function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+function TagsApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
   const defs = useMemo(() => loadTagRegistry(app), [app, tick]);
@@ -2325,7 +2325,7 @@ function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
 }
 
 // Simple overview: every space with its counts.
-function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+function SpacesApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const spaces = useMemo(() => loadSpaces(app), [app, tick]);
   const projects = useMemo(() => loadProjects(app), [app, tick]);
@@ -2392,7 +2392,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   );
 }
 
-function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+function ProjectsApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const activeSpace = useActiveSpace(app, plugin);
@@ -2576,7 +2576,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   );
 }
 
-function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin; slug: string }) {
+function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; slug: string }) {
   const [tick, refresh] = useVaultTick(app);
   const [adding, setAdding] = useState(false);
   const activeSpace = useActiveSpace(app, plugin);
@@ -2720,7 +2720,7 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
   );
 }
 
-function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const [tick, setTick] = useState(0);
   const [adding, setAdding] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
@@ -3044,7 +3044,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
 
 /* ---------------- Obsidian plumbing ---------------- */
 
-interface LinearBoardSettings {
+interface TaskBoardSettings {
   views: SavedView[];
   openOnLaunch: 'never' | 'mobile' | 'always';
   activeSpace: string; // '' = all spaces
@@ -3054,7 +3054,7 @@ interface LinearBoardSettings {
   defaultAssignee: string;
 }
 
-const DEFAULT_SETTINGS: LinearBoardSettings = {
+const DEFAULT_SETTINGS: TaskBoardSettings = {
   views: [],
   openOnLaunch: 'mobile',
   activeSpace: '',
@@ -3064,10 +3064,10 @@ const DEFAULT_SETTINGS: LinearBoardSettings = {
   defaultAssignee: 'me',
 };
 
-class LinearBoardSettingTab extends PluginSettingTab {
-  plugin: LinearBoardPlugin;
+class TaskBoardSettingTab extends PluginSettingTab {
+  plugin: TaskBoardPlugin;
 
-  constructor(app: App, plugin: LinearBoardPlugin) {
+  constructor(app: App, plugin: TaskBoardPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -3127,17 +3127,17 @@ class LinearBoardSettingTab extends PluginSettingTab {
           .addOptions({ never: 'Never', mobile: 'On mobile only', always: 'Always' })
           .setValue(this.plugin.settings.openOnLaunch)
           .onChange(async (v) => {
-            this.plugin.settings.openOnLaunch = v as LinearBoardSettings['openOnLaunch'];
+            this.plugin.settings.openOnLaunch = v as TaskBoardSettings['openOnLaunch'];
             await this.plugin.saveData(this.plugin.settings);
           })
       );
   }
 }
 
-class LinearBoardView extends ItemView {
+class TaskBoardView extends ItemView {
   root: Root | null = null;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
     super(leaf);
   }
 
@@ -3167,7 +3167,7 @@ class LinearBoardView extends ItemView {
 class ProjectsListView extends ItemView {
   root: Root | null = null;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
     super(leaf);
   }
 
@@ -3197,7 +3197,7 @@ class ProjectsListView extends ItemView {
 class SpacesListView extends ItemView {
   root: Root | null = null;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
     super(leaf);
   }
 
@@ -3227,7 +3227,7 @@ class SpacesListView extends ItemView {
 class TagsListView extends ItemView {
   root: Root | null = null;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
     super(leaf);
   }
 
@@ -3258,7 +3258,7 @@ class ProjectDetailView extends ItemView {
   root: Root | null = null;
   slug = '';
 
-  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
     super(leaf);
   }
 
@@ -3299,19 +3299,19 @@ class ProjectDetailView extends ItemView {
   }
 }
 
-export default class LinearBoardPlugin extends Plugin {
-  settings: LinearBoardSettings = { ...DEFAULT_SETTINGS };
+export default class TaskBoardPlugin extends Plugin {
+  settings: TaskBoardSettings = { ...DEFAULT_SETTINGS };
 
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     applyConfig(this.settings);
 
-    this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf, this));
+    this.registerView(VIEW_TYPE, (leaf) => new TaskBoardView(leaf, this));
     this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsListView(leaf, this));
     this.registerView(PROJECT_VIEW_TYPE, (leaf) => new ProjectDetailView(leaf, this));
     this.registerView(SPACES_VIEW_TYPE, (leaf) => new SpacesListView(leaf, this));
     this.registerView(TAGS_VIEW_TYPE, (leaf) => new TagsListView(leaf, this));
-    this.addSettingTab(new LinearBoardSettingTab(this.app, this));
+    this.addSettingTab(new TaskBoardSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
       const mode = this.settings.openOnLaunch;
@@ -3391,7 +3391,7 @@ export default class LinearBoardPlugin extends Plugin {
     this.settings.activeSpace = space;
     void this.saveData(this.settings);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.app.workspace as any).trigger('linear-board:space-changed');
+    (this.app.workspace as any).trigger('task-board:space-changed');
   }
 
   async activateView() {
