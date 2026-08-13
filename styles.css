@@ -70,6 +70,7 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--lb-border);
   flex-wrap: wrap;
+  min-height: 42px; /* identical bar height on every view — no jump */
 }
 .lb-brand {
   font-weight: 600;
@@ -97,7 +98,7 @@
 }
 .lb-new {
   margin-left: auto;
-  height: 26px;
+  height: 24px;
   padding: 0 10px;
   font-size: var(--font-ui-smaller);
 }
@@ -136,7 +137,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 24px;
   padding: 0 10px;
   border-radius: var(--lb-radius);
   border: 1px solid color-mix(in srgb, var(--space-color, var(--lb-indigo)) 55%, var(--lb-border));
@@ -232,6 +233,7 @@
 /* segmented view switcher (Tasks | Projects) */
 .lb-seg {
   display: inline-flex;
+  height: 24px;
   border: 1px solid var(--lb-border);
   border-radius: var(--lb-radius);
   overflow: hidden;
@@ -246,7 +248,8 @@
   box-shadow: none;
   color: var(--lb-text-muted);
   font-size: var(--font-ui-smaller);
-  padding: 3px 12px;
+  padding: 0 12px;
+  height: 100%;
   cursor: pointer;
 }
 .lb-seg button + button {
