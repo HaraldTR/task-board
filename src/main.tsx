@@ -27,14 +27,32 @@ const TAGS_VIEW_TYPE = 'linear-tags-view';
 
 // Overview tabs stay docked leftmost in this order; other tabs flow right.
 const PINNED_VIEW_ORDER = [SPACES_VIEW_TYPE, PROJECTS_VIEW_TYPE, VIEW_TYPE, TAGS_VIEW_TYPE];
-const TASKS_FOLDER = 'pm/tasks';
-const TASKS_ACTIVE = 'pm/tasks/active';
-const TASKS_INACTIVE = 'pm/tasks/inactive';
-const PROJECTS_ACTIVE = 'pm/projects/active';
-const PROJECTS_INACTIVE = 'pm/projects/inactive';
-const SPACES_FOLDER = 'pm/spaces';
-const TAGS_FILE = 'pm/tags.md';
-const DEFAULT_ASSIGNEE = 'harald';
+// Vault layout + identity — configurable in Settings; applyConfig() derives
+// every path from the root folder so they can never drift apart.
+let TASKS_FOLDER = 'pm/tasks';
+let TASKS_ACTIVE = 'pm/tasks/active';
+let TASKS_INACTIVE = 'pm/tasks/inactive';
+let PROJECTS_ACTIVE = 'pm/projects/active';
+let PROJECTS_INACTIVE = 'pm/projects/inactive';
+let SPACES_FOLDER = 'pm/spaces';
+let TAGS_FILE = 'pm/tags.md';
+let ATTACH_FOLDER = 'pm/attachments';
+let DEFAULT_ASSIGNEE = 'me';
+let ID_PREFIX = 'T';
+
+function applyConfig(s: { rootFolder: string; idPrefix: string; defaultAssignee: string }) {
+  const root = normalizePath((s.rootFolder || 'pm').replace(/\/+$/, ''));
+  TASKS_FOLDER = `${root}/tasks`;
+  TASKS_ACTIVE = `${root}/tasks/active`;
+  TASKS_INACTIVE = `${root}/tasks/inactive`;
+  PROJECTS_ACTIVE = `${root}/projects/active`;
+  PROJECTS_INACTIVE = `${root}/projects/inactive`;
+  SPACES_FOLDER = `${root}/spaces`;
+  TAGS_FILE = `${root}/tags.md`;
+  ATTACH_FOLDER = `${root}/attachments`;
+  ID_PREFIX = (s.idPrefix || 'T').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'T';
+  DEFAULT_ASSIGNEE = slugify(s.defaultAssignee || 'me') || 'me';
+}
 
 const COLUMNS = ['agent-inbox', 'backlog', 'this-week', 'today', 'waiting', 'done', 'cancelled'] as const;
 const CLOSED = ['done', 'cancelled'];
@@ -185,7 +203,7 @@ function loadTasks(app: App): TaskItem[] {
       file,
       path: file.path,
       id,
-      title: file.basename.replace(/^T-\d+\s*/, ''),
+      title: file.basename.replace(new RegExp(`^${ID_PREFIX}-\\d+\\s*`), ''),
       status: typeof fm.status === 'string' && fm.status ? fm.status : 'backlog',
       priority: typeof fm.priority === 'string' && fm.priority ? fm.priority : null,
       project,
@@ -210,10 +228,10 @@ function loadTasks(app: App): TaskItem[] {
 function nextId(tasks: TaskItem[]): string {
   let max = 0;
   for (const t of tasks) {
-    const m = t.id.match(/^T-(\d+)$/);
+    const m = t.id.match(new RegExp(`^${ID_PREFIX}-(\\d+)$`));
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
-  return 'T-' + String(max + 1).padStart(3, '0');
+  return `${ID_PREFIX}-` + String(max + 1).padStart(3, '0');
 }
 
 function sanitizeName(name: string): string {
@@ -636,8 +654,6 @@ async function createTask(
   return app.vault.create(path, lines.join('\n'));
 }
 
-const ATTACH_FOLDER = 'pm/attachments';
-
 // Append description and attachment embeds to a freshly created task note.
 async function addBodyToTask(app: App, file: TFile, desc: string, files: File[]) {
   const embeds: string[] = [];
@@ -807,7 +823,7 @@ class SpaceModal extends Modal {
     this.modalEl.addClass('lb-edit-modal');
     this.titleEl.setText(this.existing ? `Edit space: ${this.existing.slug}` : 'New space');
 
-    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Space name (e.g. citadel, personal)…' });
+    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Space name (e.g. work, personal)…' });
     name.style.width = '100%';
     name.value = this.name;
     name.addEventListener('input', () => (this.name = name.value));
@@ -1286,7 +1302,7 @@ function assigneeMenu(
   if (allAssignees.length) menu.addSeparator();
   menu.addItem((i) =>
     i.setTitle('Someone else…').setIcon('plus').onClick(() => {
-      new TextPromptModal(app, { title: 'Assignee', placeholder: 'e.g. harald, claude', slug: true }, onPick).open();
+      new TextPromptModal(app, { title: 'Assignee', placeholder: 'e.g. anna, claude', slug: true }, onPick).open();
     })
   );
   menu.showAtMouseEvent(e.nativeEvent);
@@ -2369,7 +2385,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
               </div>
             );
           })}
-          {spaces.length === 0 && <div className="lb-empty">No spaces yet — create citadel and personal.</div>}
+          {spaces.length === 0 && <div className="lb-empty">No spaces yet — create your first one (e.g. work, personal).</div>}
         </div>
       </div>
     </StrictMode>
@@ -3033,6 +3049,9 @@ interface LinearBoardSettings {
   openOnLaunch: 'never' | 'mobile' | 'always';
   activeSpace: string; // '' = all spaces
   boardMode: 'board' | 'list';
+  rootFolder: string;
+  idPrefix: string;
+  defaultAssignee: string;
 }
 
 const DEFAULT_SETTINGS: LinearBoardSettings = {
@@ -3040,6 +3059,9 @@ const DEFAULT_SETTINGS: LinearBoardSettings = {
   openOnLaunch: 'mobile',
   activeSpace: '',
   boardMode: 'board',
+  rootFolder: 'pm',
+  idPrefix: 'T',
+  defaultAssignee: 'me',
 };
 
 class LinearBoardSettingTab extends PluginSettingTab {
@@ -3052,6 +3074,51 @@ class LinearBoardSettingTab extends PluginSettingTab {
 
   display() {
     this.containerEl.empty();
+
+    new Setting(this.containerEl)
+      .setName('Root folder')
+      .setDesc(
+        'Vault folder holding the task system (tasks/, projects/, spaces/, tags.md, attachments/ live under it). Reopen the board after changing.'
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder('pm')
+          .setValue(this.plugin.settings.rootFolder)
+          .onChange(async (v) => {
+            this.plugin.settings.rootFolder = v.trim() || 'pm';
+            await this.plugin.saveData(this.plugin.settings);
+            applyConfig(this.plugin.settings);
+          })
+      );
+
+    new Setting(this.containerEl)
+      .setName('Task ID prefix')
+      .setDesc('New tasks are numbered PREFIX-001, PREFIX-002, … Existing tasks are not renamed.')
+      .addText((t) =>
+        t
+          .setPlaceholder('T')
+          .setValue(this.plugin.settings.idPrefix)
+          .onChange(async (v) => {
+            this.plugin.settings.idPrefix = v.trim() || 'T';
+            await this.plugin.saveData(this.plugin.settings);
+            applyConfig(this.plugin.settings);
+          })
+      );
+
+    new Setting(this.containerEl)
+      .setName('Default assignee')
+      .setDesc('Assignee for new tasks. Cards only show an avatar when a task is assigned to someone else.')
+      .addText((t) =>
+        t
+          .setPlaceholder('me')
+          .setValue(this.plugin.settings.defaultAssignee)
+          .onChange(async (v) => {
+            this.plugin.settings.defaultAssignee = v.trim() || 'me';
+            await this.plugin.saveData(this.plugin.settings);
+            applyConfig(this.plugin.settings);
+          })
+      );
+
     new Setting(this.containerEl)
       .setName('Open board on launch')
       .setDesc('Open the task board automatically when Obsidian starts.')
@@ -3237,6 +3304,7 @@ export default class LinearBoardPlugin extends Plugin {
 
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    applyConfig(this.settings);
 
     this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf, this));
     this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsListView(leaf, this));

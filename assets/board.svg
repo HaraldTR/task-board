@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="430" viewBox="0 0 860 430" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <rect width="860" height="430" rx="12" fill="#101014"/>
+  <!-- nav row -->
+  <g font-size="12">
+    <rect x="20" y="18" width="248" height="26" rx="6" fill="none" stroke="#565664"/>
+    <rect x="20" y="18" width="82" height="26" rx="6" fill="rgba(255,255,255,.07)"/>
+    <text x="61" y="35" fill="#f2f2f4" text-anchor="middle">Spaces</text>
+    <line x1="102" y1="18" x2="102" y2="44" stroke="#565664"/>
+    <text x="143" y="35" fill="#9d9dab" text-anchor="middle">Projects</text>
+    <line x1="185" y1="18" x2="185" y2="44" stroke="#565664"/>
+    <text x="226" y="35" fill="#9d9dab" text-anchor="middle">Tasks</text>
+    <rect x="278" y="18" width="62" height="26" rx="6" fill="none" stroke="#565664"/>
+    <text x="309" y="35" fill="#9d9dab" text-anchor="middle">Tags</text>
+    <rect x="762" y="18" width="78" height="26" rx="6" fill="#5e6ad2"/>
+    <text x="801" y="35" fill="#ffffff" text-anchor="middle">+ New task</text>
+  </g>
+  <!-- filter row -->
+  <g font-size="11.5">
+    <rect x="20" y="56" width="92" height="24" rx="6" fill="rgba(78,167,252,.12)" stroke="#4ea7fc"/>
+    <circle cx="34" cy="68" r="4" fill="#4ea7fc"/>
+    <text x="44" y="72" fill="#f2f2f4">work ▾</text>
+    <rect x="120" y="56" width="40" height="24" rx="6" fill="rgba(94,106,210,.15)" stroke="#98a0e8"/>
+    <text x="140" y="72" fill="#f2f2f4" text-anchor="middle">All</text>
+    <rect x="166" y="56" width="72" height="24" rx="6" fill="none" stroke="#565664"/>
+    <text x="202" y="72" fill="#9d9dab" text-anchor="middle">🔥 Urgent</text>
+    <rect x="246" y="56" width="66" height="24" rx="6" fill="none" stroke="#7c85dd"/>
+    <text x="279" y="72" fill="#98a0e8" text-anchor="middle">＋ Filter</text>
+    <rect x="676" y="56" width="94" height="24" rx="6" fill="none" stroke="#565664"/>
+    <text x="723" y="72" fill="#9d9dab" text-anchor="middle">👁 Closed 4</text>
+    <rect x="778" y="56" width="62" height="24" rx="6" fill="none" stroke="#565664"/>
+    <rect x="809" y="56" width="31" height="24" rx="6" fill="rgba(255,255,255,.07)"/>
+    <text x="794" y="72" fill="#9d9dab" text-anchor="middle">☰</text>
+    <text x="825" y="72" fill="#f2f2f4" text-anchor="middle">▦</text>
+  </g>
+  <line x1="0" y1="92" x2="860" y2="92" stroke="#33333c"/>
+  <!-- lanes -->
+  <g font-size="12" font-weight="600">
+    <rect x="20" y="104" width="262" height="306" rx="8" fill="#26262e"/>
+    <circle cx="38" cy="122" r="4.5" fill="none" stroke="#8a8f98" stroke-width="1.5"/>
+    <text x="50" y="126" fill="#f2f2f4">Backlog</text>
+    <text x="106" y="126" fill="#6d6d7a" font-weight="400">3</text>
+    <rect x="299" y="104" width="262" height="306" rx="8" fill="#26262e"/>
+    <circle cx="317" cy="122" r="4.5" fill="#f2c94c"/>
+    <text x="329" y="126" fill="#f2f2f4">Today</text>
+    <text x="374" y="126" fill="#6d6d7a" font-weight="400">2</text>
+    <rect x="578" y="104" width="262" height="306" rx="8" fill="#26262e"/>
+    <circle cx="596" cy="122" r="4.5" fill="#f2994a"/>
+    <text x="608" y="126" fill="#f2f2f4">Waiting</text>
+    <text x="662" y="126" fill="#6d6d7a" font-weight="400">1</text>
+  </g>
+  <!-- cards -->
+  <g font-size="11">
+    <!-- card template: backlog 1 -->
+    <g>
+      <rect x="28" y="138" width="246" height="84" rx="6" fill="#0a0a0c" stroke="#565664"/>
+      <text x="40" y="158" fill="#6d6d7a" font-family="ui-monospace,Menlo,monospace" font-size="10">T-034</text>
+      <rect x="82" y="146" width="64" height="17" rx="5" fill="rgba(94,106,210,.14)" stroke="#5e6ad2"/>
+      <text x="114" y="158" fill="#98a0e8" text-anchor="middle">◆ plumbus</text>
+      <text x="40" y="182" fill="#f2f2f4" font-size="12.5">dinglebop smoothing pass</text>
+      <g transform="translate(40,196)">
+        <rect width="26" height="17" rx="5" fill="none" stroke="#565664"/>
+        <rect x="5" y="10" width="3" height="4" rx="1" fill="#f2c94c"/><rect x="10" y="8" width="3" height="6" rx="1" fill="#f2c94c"/><rect x="15" y="6" width="3" height="8" rx="1" fill="#565664"/><rect x="20" y="4" width="3" height="10" rx="1" fill="#565664"/>
+        <rect x="32" width="24" height="17" rx="5" fill="none" stroke="#565664"/>
+        <text x="44" y="12.5" fill="#9d9dab" text-anchor="middle">M</text>
+        <rect x="62" width="42" height="17" rx="5" fill="rgba(235,87,87,.1)" stroke="#a4525a"/>
+        <text x="83" y="12.5" fill="#eb5757" text-anchor="middle">🐛 bug</text>
+      </g>
+    </g>
+    <!-- backlog 2 -->
+    <g transform="translate(0,94)">
+      <rect x="28" y="138" width="246" height="70" rx="6" fill="#0a0a0c" stroke="#565664"/>
+      <text x="40" y="158" fill="#6d6d7a" font-family="ui-monospace,Menlo,monospace" font-size="10">T-031</text>
+      <rect x="82" y="146" width="70" height="17" rx="5" fill="rgba(242,201,76,.1)" stroke="#8a7a44"/>
+      <text x="117" y="158" fill="#f2c94c" text-anchor="middle">♥ family</text>
+      <text x="40" y="182" fill="#f2f2f4" font-size="12.5">plan interdimensional cable</text>
+      <g transform="translate(40,190)"><rect width="26" height="17" rx="5" fill="none" stroke="#565664"/><rect x="5" y="8" width="4" height="2" rx="1" fill="#6d6d7a"/><rect x="11" y="8" width="4" height="2" rx="1" fill="#6d6d7a"/><rect x="17" y="8" width="4" height="2" rx="1" fill="#6d6d7a"/></g>
+    </g>
+    <!-- today 1 -->
+    <g transform="translate(279,0)">
+      <rect x="28" y="138" width="246" height="84" rx="6" fill="#0a0a0c" stroke="#565664"/>
+      <text x="40" y="158" fill="#6d6d7a" font-family="ui-monospace,Menlo,monospace" font-size="10">T-022</text>
+      <rect x="82" y="146" width="64" height="17" rx="5" fill="rgba(94,106,210,.14)" stroke="#5e6ad2"/>
+      <text x="114" y="158" fill="#98a0e8" text-anchor="middle">◆ plumbus</text>
+      <text x="40" y="182" fill="#f2f2f4" font-size="12.5">continue fleeb juice demo</text>
+      <g transform="translate(40,196)">
+        <rect width="26" height="17" rx="5" fill="none" stroke="#565664"/>
+        <rect x="5" y="10" width="3" height="4" rx="1" fill="#eb5757"/><rect x="10" y="8" width="3" height="6" rx="1" fill="#eb5757"/><rect x="15" y="6" width="3" height="8" rx="1" fill="#eb5757"/><rect x="20" y="4" width="3" height="10" rx="1" fill="#eb5757"/>
+        <rect x="32" width="24" height="17" rx="5" fill="none" stroke="#565664"/>
+        <text x="44" y="12.5" fill="#9d9dab" text-anchor="middle">S</text>
+      </g>
+    </g>
+    <!-- today 2 -->
+    <g transform="translate(279,94)">
+      <rect x="28" y="138" width="246" height="70" rx="6" fill="#0a0a0c" stroke="#565664"/>
+      <text x="40" y="158" fill="#6d6d7a" font-family="ui-monospace,Menlo,monospace" font-size="10">T-018</text>
+      <rect x="82" y="146" width="102" height="17" rx="5" fill="rgba(76,183,130,.12)" stroke="#4cb782"/>
+      <text x="133" y="158" fill="#4cb782" text-anchor="middle">⚡ meeseeks-box</text>
+      <text x="40" y="182" fill="#f2f2f4" font-size="12.5">fix schleem repurpose flow</text>
+      <g transform="translate(40,190)">
+        <rect width="26" height="17" rx="5" fill="none" stroke="#565664"/>
+        <rect x="5" y="10" width="3" height="4" rx="1" fill="#f2994a"/><rect x="10" y="8" width="3" height="6" rx="1" fill="#f2994a"/><rect x="15" y="6" width="3" height="8" rx="1" fill="#f2994a"/><rect x="20" y="4" width="3" height="10" rx="1" fill="#565664"/>
+        <circle cx="220" cy="8" r="9" fill="#4ea7fc"/>
+        <text x="220" y="12" fill="#fff" font-size="10" font-weight="600" text-anchor="middle">C</text>
+      </g>
+    </g>
+    <!-- waiting 1 -->
+    <g transform="translate(558,0)">
+      <rect x="28" y="138" width="246" height="70" rx="6" fill="#0a0a0c" stroke="#565664"/>
+      <text x="40" y="158" fill="#6d6d7a" font-family="ui-monospace,Menlo,monospace" font-size="10">T-029</text>
+      <rect x="82" y="146" width="70" height="17" rx="5" fill="rgba(242,201,76,.1)" stroke="#8a7a44"/>
+      <text x="117" y="158" fill="#f2c94c" text-anchor="middle">♥ family</text>
+      <text x="40" y="182" fill="#f2f2f4" font-size="12.5">week 33 planning</text>
+      <g transform="translate(40,190)"><rect width="26" height="17" rx="5" fill="none" stroke="#565664"/><rect x="5" y="8" width="4" height="2" rx="1" fill="#6d6d7a"/><rect x="11" y="8" width="4" height="2" rx="1" fill="#6d6d7a"/><rect x="17" y="8" width="4" height="2" rx="1" fill="#6d6d7a"/></g>
+    </g>
+  </g>
+</svg>

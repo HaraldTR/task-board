@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="150" viewBox="0 0 860 150" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <rect width="860" height="150" rx="12" fill="#131318"/>
+  <!-- vault -->
+  <g>
+    <rect x="28" y="45" width="150" height="60" rx="8" fill="#26262e" stroke="#565664"/>
+    <text x="103" y="72" fill="#6d6d7a" font-size="10" letter-spacing="1.5" text-anchor="middle">VAULT</text>
+    <text x="103" y="91" fill="#f2f2f4" font-size="15" font-weight="600" text-anchor="middle">pm/</text>
+  </g>
+  <text x="200" y="80" fill="#6d6d7a" font-size="16" text-anchor="middle">→</text>
+  <!-- space -->
+  <g>
+    <rect x="222" y="45" width="150" height="60" rx="8" fill="rgba(78,167,252,.14)" stroke="#4ea7fc"/>
+    <text x="297" y="72" fill="#7fbdf8" font-size="10" letter-spacing="1.5" text-anchor="middle">SPACE</text>
+    <text x="297" y="91" fill="#f2f2f4" font-size="15" font-weight="600" text-anchor="middle">work</text>
+  </g>
+  <text x="394" y="80" fill="#6d6d7a" font-size="16" text-anchor="middle">→</text>
+  <!-- project -->
+  <g>
+    <rect x="416" y="45" width="170" height="60" rx="8" fill="rgba(94,106,210,.16)" stroke="#5e6ad2"/>
+    <text x="501" y="72" fill="#98a0e8" font-size="10" letter-spacing="1.5" text-anchor="middle">PROJECT</text>
+    <text x="501" y="91" fill="#f2f2f4" font-size="15" font-weight="600" text-anchor="middle">plumbus</text>
+  </g>
+  <text x="608" y="80" fill="#6d6d7a" font-size="16" text-anchor="middle">→</text>
+  <!-- task -->
+  <g>
+    <rect x="630" y="45" width="200" height="60" rx="8" fill="#0a0a0c" stroke="#565664"/>
+    <text x="730" y="72" fill="#6d6d7a" font-size="10" letter-spacing="1.5" text-anchor="middle">TASK</text>
+    <text x="730" y="91" fill="#f2f2f4" font-size="14" font-weight="600" text-anchor="middle">T-022 fleeb juice</text>
+  </g>
+  <text x="430" y="24" fill="#9d9dab" font-size="12" text-anchor="middle">Spaces are folders · projects are folder notes · tasks are flat typed notes that inherit their space</text>
+  <text x="430" y="134" fill="#6d6d7a" font-size="11" text-anchor="middle">Everything is plain markdown with frontmatter — greppable, syncable, agent-editable</text>
+</svg>
