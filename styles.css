@@ -1193,15 +1193,17 @@
   .lb-space-sw {
     height: 28px;
   }
+  /* uniform filter-row controls: 28px pills, 19px icons everywhere in headers */
+  .lb-header:not(.lb-header-top) .lb-pill,
   .lb-mode-seg,
-  .lb-closed-toggle {
+  .lb-closed-toggle,
+  .lb-header:not(.lb-header-top) .lb-seg {
     height: 28px;
   }
   .lb-mode-seg button {
     padding: 0 9px;
   }
-  .lb-mode-seg .lb-view-icon svg,
-  .lb-closed-toggle .lb-view-icon svg {
+  .lb-header .lb-view-icon svg {
     width: 19px;
     height: 19px;
   }
