@@ -131,6 +131,63 @@
   padding-bottom: 2px;
 }
 
+/* space switcher — leads the nav row on every view */
+.lb-space-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--lb-radius);
+  border: 1px solid color-mix(in srgb, var(--space-color, var(--lb-indigo)) 55%, var(--lb-border));
+  background: color-mix(in srgb, var(--space-color, var(--lb-indigo)) 12%, transparent);
+  color: var(--lb-text);
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: none;
+}
+.lb-space-sw:hover {
+  background: color-mix(in srgb, var(--space-color, var(--lb-indigo)) 20%, transparent);
+}
+.lb-space-sw .lb-space-dot {
+  background: var(--space-color, linear-gradient(90deg, var(--lb-blue), var(--lb-yellow)));
+}
+.lb-chev {
+  color: var(--lb-text-faint);
+  font-size: 9px;
+}
+.lb-space-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--lb-text-muted);
+  cursor: pointer;
+}
+.lb-space-crumb:hover {
+  color: var(--lb-text);
+}
+.lb-space-crumb .lb-dot {
+  width: 7px;
+  height: 7px;
+}
+.lb-crumb-space {
+  cursor: pointer;
+}
+.lb-crumb-space:hover {
+  color: var(--lb-text);
+}
+.lb-space-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  color: var(--lb-text-muted);
+  margin: 14px 0 2px;
+  padding: 0 4px;
+}
+
 /* segmented view switcher (Tasks | Projects) */
 .lb-seg {
   display: inline-flex;

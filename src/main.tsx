@@ -67,11 +67,13 @@ interface TaskItem {
   completed: string | null;
   assignee: string;
   origin: 'human' | 'ai';
+  space: string | null; // derived: the task's project's space
 }
 
 /* ---------------- filters ---------------- */
 
 const FILTER_FIELDS = [
+  { key: 'space', label: 'Space' },
   { key: 'project', label: 'Project' },
   { key: 'tags', label: 'Tags' },
   { key: 'priority', label: 'Priority' },
@@ -162,11 +164,13 @@ function parseTags(fm: Record<string, unknown>): string[] {
 
 function loadTasks(app: App): TaskItem[] {
   const tasks: TaskItem[] = [];
+  const projectInfos = loadProjectInfos(app);
   for (const file of app.vault.getMarkdownFiles()) {
     if (!file.path.startsWith(TASKS_FOLDER + '/')) continue;
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm || fm.type !== 'task') continue;
     const id = typeof fm.id === 'string' ? fm.id : file.basename.split(' ')[0];
+    const project = parseProject(fm.project);
     tasks.push({
       file,
       path: file.path,
@@ -174,7 +178,8 @@ function loadTasks(app: App): TaskItem[] {
       title: file.basename.replace(/^T-\d+\s*/, ''),
       status: typeof fm.status === 'string' && fm.status ? fm.status : 'backlog',
       priority: typeof fm.priority === 'string' && fm.priority ? fm.priority : null,
-      project: parseProject(fm.project),
+      project,
+      space: project ? projectInfos.get(project)?.space ?? null : null,
       tags: parseTags(fm),
       size:
         typeof fm.size === 'string' && SIZES.includes(fm.size.toUpperCase() as (typeof SIZES)[number])
@@ -246,11 +251,9 @@ async function moveTask(app: App, task: TaskItem, status: string) {
 }
 
 function listProjects(app: App): string[] {
-  const folder = app.vault.getAbstractFileByPath(PROJECTS_ACTIVE);
-  if (!(folder instanceof TFolder)) return [];
-  return folder.children
-    .filter((c): c is TFolder => c instanceof TFolder)
-    .map((f) => f.name)
+  return loadProjects(app)
+    .filter((p) => p.status === 'active')
+    .map((p) => p.slug)
     .sort();
 }
 
@@ -475,16 +478,18 @@ async function renameProject(app: App, oldSlug: string, newSlug: string, base: s
   }
 }
 
-async function moveProject(app: App, slug: string, from: string, to: string) {
-  await ensureFolder(app, to);
-  const dir = app.vault.getAbstractFileByPath(`${from}/${slug}`);
+// Archive/restore moves the project folder between status roots, preserving
+// its space subfolder.
+async function setProjectStatus(app: App, p: Project, status: 'active' | 'inactive') {
+  if (p.status === status) return;
+  const root = status === 'active' ? PROJECTS_ACTIVE : PROJECTS_INACTIVE;
+  const toDir = p.space ? `${root}/${p.space}` : root;
+  await ensureFolder(app, toDir);
+  const dir = app.vault.getAbstractFileByPath(`${projectBase(p)}/${p.slug}`);
   if (dir instanceof TFolder) {
-    await app.fileManager.renameFile(dir, normalizePath(`${to}/${slug}`));
+    await app.fileManager.renameFile(dir, normalizePath(`${toDir}/${p.slug}`));
   }
 }
-
-const archiveProject = (app: App, slug: string) => moveProject(app, slug, PROJECTS_ACTIVE, PROJECTS_INACTIVE);
-const restoreProject = (app: App, slug: string) => moveProject(app, slug, PROJECTS_INACTIVE, PROJECTS_ACTIVE);
 
 // icon/color come from the project folder note's frontmatter (icon: lucide
 // name, color: any CSS color). Includes archived projects so cards keep
@@ -492,35 +497,11 @@ const restoreProject = (app: App, slug: string) => moveProject(app, slug, PROJEC
 function loadProjectInfos(app: App): Map<string, ProjectInfo> {
   const map = new Map<string, ProjectInfo>();
   for (const p of loadProjects(app)) {
-    map.set(p.slug, { icon: p.icon, color: p.color });
+    map.set(p.slug, { icon: p.icon, color: p.color, space: p.space });
   }
   return map;
 }
 
-// A project is a folder under pm/projects/active/ with a folder note
-// (<slug>/<slug>.md) holding its metadata; everything else in it is scratch.
-async function createProject(app: App, slug: string) {
-  const dir = `${PROJECTS_ACTIVE}/${slug}`;
-  await ensureFolder(app, dir);
-  const notePath = normalizePath(`${dir}/${slug}.md`);
-  if (!app.vault.getAbstractFileByPath(notePath)) {
-    await app.vault.create(
-      notePath,
-      [
-        '---',
-        'type: project',
-        'description:',
-        'icon:',
-        'color:',
-        `created: ${todayStr()}`,
-        'origin: human',
-        'tags: []',
-        '---',
-        '',
-      ].join('\n')
-    );
-  }
-}
 
 function loadTagRegistry(app: App): string[] {
   const f = app.vault.getAbstractFileByPath(TAGS_FILE);
@@ -725,20 +706,124 @@ class SaveViewModal extends Modal {
   }
 }
 
-// Create/edit a project through code so the folder + folder note structure is
-// always correct. Renaming re-points all tasks.
-class ProjectModal extends Modal {
+function slugify(v: string): string {
+  return v.trim().toLowerCase().replace(/\s+/g, '-').replace(/[\\/:|#^\[\]"*?<>]/g, '');
+}
+
+// Create/edit a space: typed note in pm/spaces/ plus (on create) its project
+// folder and catch-all project.
+class SpaceModal extends Modal {
   private name: string;
   private description: string;
   private icon: string | null;
   private color: string | null;
 
-  constructor(app: App, private existing: Project | null, private onDone: () => void) {
+  constructor(app: App, private existing: Space | null, private onDone: () => void) {
     super(app);
     this.name = existing?.slug ?? '';
     this.description = existing?.description ?? '';
     this.icon = existing?.icon ?? null;
     this.color = existing?.color ?? null;
+  }
+
+  onOpen() {
+    this.modalEl.addClass('lb-edit-modal');
+    this.titleEl.setText(this.existing ? `Edit space: ${this.existing.slug}` : 'New space');
+
+    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Space name (e.g. citadel, personal)…' });
+    name.style.width = '100%';
+    name.value = this.name;
+    name.addEventListener('input', () => (this.name = name.value));
+
+    const desc = this.contentEl.createEl('textarea', {
+      cls: 'lb-proj-desc-input',
+      attr: { placeholder: 'One-line description…', rows: '2' },
+    });
+    desc.value = this.description;
+    desc.addEventListener('input', () => (this.description = desc.value));
+
+    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
+    const iconBtns = new Map<string, HTMLElement>();
+    const paintIcons = () => {
+      for (const [ic, el] of iconBtns) el.toggleClass('lb-icon-selected', this.icon === ic);
+    };
+    for (const ic of PROJECT_ICONS) {
+      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
+      setIcon(b, ic);
+      b.addEventListener('click', () => {
+        this.icon = this.icon === ic ? null : ic;
+        paintIcons();
+      });
+      iconBtns.set(ic, b);
+    }
+    paintIcons();
+
+    const swatchRow = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
+    const swatches = new Map<string, HTMLElement>();
+    for (const c of PROJECT_COLORS) {
+      const b = swatchRow.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
+      b.style.background = c;
+      b.addEventListener('click', () => {
+        this.color = this.color === c ? null : c;
+        for (const [cc, el] of swatches) el.toggleClass('lb-swatch-selected', this.color === cc);
+      });
+      swatches.set(c, b);
+      b.toggleClass('lb-swatch-selected', this.color === c);
+    }
+
+    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const save = actions.createEl('button', { text: this.existing ? 'Save' : 'Create space', cls: 'mod-cta' });
+    save.addEventListener('click', () => void this.save());
+  }
+
+  async save() {
+    const slug = slugify(this.name);
+    if (!slug) {
+      new Notice('Space needs a name');
+      return;
+    }
+    if (this.existing) {
+      if (slug !== this.existing.slug) await renameSpace(this.app, this.existing.slug, slug);
+    } else if (this.app.vault.getAbstractFileByPath(`${SPACES_FOLDER}/${slug}.md`)) {
+      new Notice(`Space "${slug}" already exists`);
+      return;
+    }
+    await writeSpaceNote(this.app, slug, {
+      description: this.description.trim(),
+      icon: this.icon,
+      color: this.color,
+    });
+    new Notice(this.existing ? `${slug} updated` : `Space ${slug} created`);
+    this.onDone();
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// Create/edit a project through code so the folder + folder note structure is
+// always correct. Renaming re-points all tasks; changing space moves the folder.
+class ProjectModal extends Modal {
+  private name: string;
+  private description: string;
+  private icon: string | null;
+  private color: string | null;
+  private space: string | null;
+
+  constructor(
+    app: App,
+    private existing: Project | null,
+    private onDone: (slug: string) => void,
+    defaultSpace: string | null = null
+  ) {
+    super(app);
+    this.name = existing?.slug ?? '';
+    this.description = existing?.description ?? '';
+    this.icon = existing?.icon ?? null;
+    this.color = existing?.color ?? null;
+    this.space = existing ? existing.space : defaultSpace;
   }
 
   onOpen() {
@@ -749,6 +834,29 @@ class ProjectModal extends Modal {
     name.style.width = '100%';
     name.value = this.name;
     name.addEventListener('input', () => (this.name = name.value));
+
+    const spaceRow = this.contentEl.createDiv({ cls: 'lb-modal-row' });
+    const spacePill = spaceRow.createEl('button', { cls: 'lb-pill' });
+    const paintSpace = () => spacePill.setText(this.space ? `Space: ${this.space}` : 'Space: none');
+    paintSpace();
+    spacePill.addEventListener('click', (evt) => {
+      const menu = new Menu();
+      for (const s of loadSpaces(this.app)) {
+        menu.addItem((i) =>
+          i.setTitle(s.slug).setChecked(this.space === s.slug).onClick(() => {
+            this.space = s.slug;
+            paintSpace();
+          })
+        );
+      }
+      menu.addItem((i) =>
+        i.setTitle('No space').setChecked(this.space === null).onClick(() => {
+          this.space = null;
+          paintSpace();
+        })
+      );
+      menu.showAtMouseEvent(evt);
+    });
 
     const desc = this.contentEl.createEl('textarea', {
       cls: 'lb-proj-desc-input',
@@ -803,18 +911,21 @@ class ProjectModal extends Modal {
   }
 
   async save() {
-    const slug = this.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[\\/:|#^\[\]"*?<>]/g, '');
+    const slug = slugify(this.name);
     if (!slug) {
       new Notice('Project needs a name');
       return;
     }
-    const base = this.existing ? projectBase(this.existing) : PROJECTS_ACTIVE;
+    const statusRoot = this.existing?.status === 'inactive' ? PROJECTS_INACTIVE : PROJECTS_ACTIVE;
+    const base = this.space ? `${statusRoot}/${this.space}` : statusRoot;
     if (this.existing) {
-      if (slug !== this.existing.slug) await renameProject(this.app, this.existing.slug, slug, base);
-    } else if (
-      this.app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}`) ||
-      this.app.vault.getAbstractFileByPath(`${PROJECTS_INACTIVE}/${slug}`)
-    ) {
+      if (this.space !== this.existing.space) {
+        await moveProjectToSpace(this.app, this.existing, this.space);
+      }
+      if (slug !== this.existing.slug) {
+        await renameProject(this.app, this.existing.slug, slug, base);
+      }
+    } else if (loadProjects(this.app).some((p) => p.slug === slug)) {
       new Notice(`Project "${slug}" already exists`);
       return;
     }
@@ -824,7 +935,7 @@ class ProjectModal extends Modal {
       color: this.color,
     }, base);
     new Notice(this.existing ? `${slug} updated` : `Project ${slug} created`);
-    this.onDone();
+    this.onDone(slug);
     this.close();
   }
 
@@ -1007,9 +1118,7 @@ function projectMenu(
   if (allProjects.length) menu.addSeparator();
   menu.addItem((i) =>
     i.setTitle('New project…').setIcon('plus').onClick(() => {
-      new TextPromptModal(app, { title: 'New project', placeholder: 'e.g. citadel, personal', slug: true }, (slug) => {
-        void createProject(app, slug).then(() => onPick(slug));
-      }).open();
+      new ProjectModal(app, null, (slug) => onPick(slug)).open();
     })
   );
   menu.showAtMouseEvent(e.nativeEvent);
@@ -1544,6 +1653,60 @@ function useVaultTick(app: App): [number, () => void] {
   return [tick, refresh];
 }
 
+// Active space is shared across all plugin views; changes broadcast via a
+// workspace event so every mounted view updates.
+function useActiveSpace(app: App, plugin: LinearBoardPlugin): string {
+  const [space, setSpace] = useState(plugin.settings.activeSpace ?? '');
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ref = (app.workspace as any).on('linear-board:space-changed', () =>
+      setSpace(plugin.settings.activeSpace ?? '')
+    );
+    return () => app.workspace.offref(ref);
+  }, [app, plugin]);
+  return space;
+}
+
+function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: LinearBoardPlugin; space: string }) {
+  const spaces = loadSpaces(app);
+  const current = spaces.find((s) => s.slug === space);
+  const openMenu = (e: React.MouseEvent) => {
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i.setTitle('All spaces').setChecked(!space).onClick(() => plugin.setActiveSpace(''))
+    );
+    for (const s of spaces) {
+      menu.addItem((i) => {
+        i.setTitle(s.slug).setChecked(space === s.slug).onClick(() => plugin.setActiveSpace(s.slug));
+        if (s.icon) i.setIcon(s.icon);
+      });
+    }
+    menu.addSeparator();
+    menu.addItem((i) =>
+      i.setTitle('New space…').setIcon('plus').onClick(() => new SpaceModal(app, null, () => {}).open())
+    );
+    if (current) {
+      menu.addItem((i) =>
+        i.setTitle(`Edit ${current.slug}…`).setIcon('pencil').onClick(() => new SpaceModal(app, current, () => {}).open())
+      );
+    }
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+  return (
+    <button
+      className="lb-space-sw"
+      style={current?.color ? ({ '--space-color': current.color } as React.CSSProperties) : undefined}
+      onClick={openMenu}
+      title="Switch space"
+    >
+      <span className="lb-dot lb-space-dot" />
+      {current?.icon && <LucideIcon name={current.icon} />}
+      {current?.slug ?? 'All spaces'}
+      <span className="lb-chev">▾</span>
+    </button>
+  );
+}
+
 function pickerLists(app: App, tasks: TaskItem[]): PickerLists {
   return {
     allProjects: [
@@ -1618,6 +1781,19 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         <LucideIcon name="kanban-square" />
         Board
       </button>
+      {task.space && (
+        <span
+          className="lb-space-crumb"
+          onClick={() => plugin.setActiveSpace(task.space!)}
+          title="Scope board to this space"
+        >
+          <span
+            className="lb-dot"
+            style={{ background: loadSpaces(app).find((s) => s.slug === task.space)?.color ?? 'var(--lb-gray)' }}
+          />
+          {task.space} ›
+        </span>
+      )}
       <span
         className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
         style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
@@ -1704,8 +1880,12 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
 function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const activeSpace = useActiveSpace(app, plugin);
+  const spaces = useMemo(() => loadSpaces(app), [app, tick]);
   const allProjects = useMemo(() => loadProjects(app), [app, tick]);
-  const projects = allProjects.filter((p) => statusFilter === 'all' || p.status === statusFilter);
+  const projects = allProjects.filter(
+    (p) => (statusFilter === 'all' || p.status === statusFilter) && (!activeSpace || p.space === activeSpace)
+  );
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
 
   const counts = (slug: string) => {
@@ -1732,7 +1912,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     if (p.status === 'active') {
       menu.addItem((i) =>
         i.setTitle('Archive').setIcon('archive').onClick(async () => {
-          await archiveProject(app, p.slug);
+          await setProjectStatus(app, p, 'inactive');
           new Notice(`${p.slug} archived`);
           refresh();
         })
@@ -1740,7 +1920,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     } else {
       menu.addItem((i) =>
         i.setTitle('Restore').setIcon('archive-restore').onClick(async () => {
-          await restoreProject(app, p.slug);
+          await setProjectStatus(app, p, 'active');
           new Notice(`${p.slug} restored`);
           refresh();
         })
@@ -1748,6 +1928,19 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     }
     menu.showAtMouseEvent(e.nativeEvent);
   };
+
+  // Grouped by space when unscoped; flat when a space is selected. `label`
+  // undefined means "render rows without a group header".
+  const groupedProjects: { label?: string; color?: string | null; items: Project[] }[] = activeSpace
+    ? [{ items: projects }]
+    : [
+        ...spaces.map((s) => ({
+          label: s.slug,
+          color: s.color,
+          items: projects.filter((p) => p.space === s.slug),
+        })),
+        { label: 'unspaced', color: null, items: projects.filter((p) => !p.space || !spaces.some((s) => s.slug === p.space)) },
+      ].filter((g) => g.items.length > 0);
 
   const filterPill = (key: 'active' | 'inactive' | 'all', label: string) => (
     <button
@@ -1763,6 +1956,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     <StrictMode>
       <div className="lb-root">
         <div className="lb-header lb-header-top">
+          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <div className="lb-seg">
             <button onClick={() => void plugin.activateView()}>
               <LucideIcon name="kanban-square" />
@@ -1773,7 +1967,10 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
               Projects
             </button>
           </div>
-          <button className="mod-cta lb-new" onClick={() => new ProjectModal(app, null, refresh).open()}>
+          <button
+            className="mod-cta lb-new"
+            onClick={() => new ProjectModal(app, null, refresh, activeSpace || null).open()}
+          >
             + New project
           </button>
         </div>
@@ -1793,41 +1990,52 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             <span className="lb-projcount">%</span>
             <span className="lb-projcount lb-projcreated">Created</span>
           </div>
-          {projects.map((p) => {
-            const c = counts(p.slug);
-            return (
-              <div
-                key={`${p.status}/${p.slug}`}
-                className={`lb-projrow${p.status === 'inactive' ? ' lb-projrow-archived' : ''}`}
-                onClick={() => void plugin.openProject(p.slug)}
-                onContextMenu={(e) => rowMenu(p, e)}
-              >
-                <span className="lb-projname-col">
-                  <ProjectChip project={p} />
-                  {p.status === 'inactive' && <span className="lb-archived-badge">archived</span>}
-                </span>
-                <span className="lb-projdesc">
-                  {p.file === null ? (
-                    <button
-                      className="lb-pill lb-pill-required"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void writeProjectNote(app, p.slug, { description: '', icon: null, color: null }, projectBase(p)).then(refresh);
-                      }}
-                    >
-                      Missing folder note — fix structure
-                    </button>
-                  ) : (
-                    p.description
-                  )}
-                </span>
-                <span className="lb-projcount">{c.open}</span>
-                <span className="lb-projcount">{c.done}</span>
-                <span className="lb-projcount">{c.pct}%</span>
-                <span className="lb-projcount lb-projcreated">{p.created ?? ''}</span>
-              </div>
-            );
-          })}
+          {groupedProjects.map(({ label, color, items }) => (
+            <div key={label ?? '(unspaced)'}>
+              {label !== undefined && (
+                <div className="lb-space-group">
+                  <span className="lb-dot" style={{ background: color ?? 'var(--lb-gray)' }} />
+                  {label}
+                  <span className="lb-count">{items.length}</span>
+                </div>
+              )}
+              {items.map((p) => {
+                const c = counts(p.slug);
+                return (
+                  <div
+                    key={`${p.status}/${p.slug}`}
+                    className={`lb-projrow${p.status === 'inactive' ? ' lb-projrow-archived' : ''}`}
+                    onClick={() => void plugin.openProject(p.slug)}
+                    onContextMenu={(e) => rowMenu(p, e)}
+                  >
+                    <span className="lb-projname-col">
+                      <ProjectChip project={p} />
+                      {p.status === 'inactive' && <span className="lb-archived-badge">archived</span>}
+                    </span>
+                    <span className="lb-projdesc">
+                      {p.file === null ? (
+                        <button
+                          className="lb-pill lb-pill-required"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void writeProjectNote(app, p.slug, { description: '', icon: null, color: null }, projectBase(p)).then(refresh);
+                          }}
+                        >
+                          Missing folder note — fix structure
+                        </button>
+                      ) : (
+                        p.description
+                      )}
+                    </span>
+                    <span className="lb-projcount">{c.open}</span>
+                    <span className="lb-projcount">{c.done}</span>
+                    <span className="lb-projcount">{c.pct}%</span>
+                    <span className="lb-projcount lb-projcreated">{p.created ?? ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
           {projects.length === 0 && (
             <div className="lb-empty">No projects yet — create the first one.</div>
           )}
@@ -1840,8 +2048,10 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
 function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin; slug: string }) {
   const [tick, refresh] = useVaultTick(app);
   const [adding, setAdding] = useState(false);
+  const activeSpace = useActiveSpace(app, plugin);
   const allTasks = useMemo(() => loadTasks(app), [app, tick]);
   const projects = useMemo(() => loadProjects(app), [app, tick]);
+  const spaces = useMemo(() => loadSpaces(app), [app, tick]);
   const project = projects.find((p) => p.slug === slug);
   const lists = useMemo(() => pickerLists(app, allTasks), [app, allTasks]);
   const mine = allTasks
@@ -1883,6 +2093,7 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
     <StrictMode>
       <div className="lb-root">
         <div className="lb-header lb-header-top">
+          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <div className="lb-seg">
             <button onClick={() => void plugin.activateView()}>
               <LucideIcon name="kanban-square" />
@@ -1894,6 +2105,18 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
             </button>
           </div>
           <span className="lb-breadcrumb">
+            {project.space && (
+              <>
+                <LucideIcon name="chevron-right" />
+                <span
+                  className="lb-crumb-space"
+                  onClick={() => plugin.setActiveSpace(project.space!)}
+                  title="Scope to this space"
+                >
+                  {project.space}
+                </span>
+              </>
+            )}
             <LucideIcon name="chevron-right" />
             {slug}
           </span>
@@ -1913,14 +2136,33 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
               </button>
               <button
                 className="lb-pill"
-                onClick={async () => {
-                  if (project.status === 'active') {
-                    await archiveProject(app, slug);
-                    new Notice(`${slug} archived`);
-                  } else {
-                    await restoreProject(app, slug);
-                    new Notice(`${slug} restored`);
+                onClick={(e) => {
+                  const menu = new Menu();
+                  for (const s of spaces) {
+                    menu.addItem((i) =>
+                      i.setTitle(s.slug).setChecked(project.space === s.slug).onClick(async () => {
+                        await moveProjectToSpace(app, project, s.slug);
+                        new Notice(`${slug} moved to ${s.slug}`);
+                        refresh();
+                      })
+                    );
                   }
+                  menu.addItem((i) =>
+                    i.setTitle('No space').setChecked(project.space === null).onClick(async () => {
+                      await moveProjectToSpace(app, project, null);
+                      refresh();
+                    })
+                  );
+                  menu.showAtMouseEvent(e.nativeEvent);
+                }}
+              >
+                Move to space…
+              </button>
+              <button
+                className="lb-pill"
+                onClick={async () => {
+                  await setProjectStatus(app, project, project.status === 'active' ? 'inactive' : 'active');
+                  new Notice(project.status === 'active' ? `${slug} archived` : `${slug} restored`);
                   refresh();
                 }}
               >
@@ -2040,8 +2282,9 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       status: [...COLUMNS],
       assignee: allAssignees,
       origin: ['human', 'ai'],
+      space: [...loadSpaces(app).map((s) => s.slug), ...(tasks.some((t) => !t.space) ? ['none'] : [])],
     }),
-    [tasks, allProjects, allTags, allAssignees]
+    [app, tick, tasks, allProjects, allTags, allAssignees]
   );
 
   const persistViews = (next: SavedView[]) => {
@@ -2109,7 +2352,10 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     menu.showAtMouseEvent(e.nativeEvent);
   };
 
-  const visible = tasks.filter((t) => matchesConditions(t, conditions));
+  const activeSpace = useActiveSpace(app, plugin);
+  const visible = tasks.filter(
+    (t) => (!activeSpace || t.space === activeSpace) && matchesConditions(t, conditions)
+  );
   const columns = COLUMNS.filter((c) => showClosed || !CLOSED.includes(c));
   const filtered = hasConditions(conditions);
   const valueLabel = (field: FilterField, v: string) =>
@@ -2130,6 +2376,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     <StrictMode>
       <div className="lb-root">
         <div className="lb-header lb-header-top">
+          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <div className="lb-seg">
             <button className="lb-seg-active">
               <LucideIcon name="kanban-square" />
@@ -2253,9 +2500,10 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
 interface LinearBoardSettings {
   views: SavedView[];
   openOnLaunch: 'never' | 'mobile' | 'always';
+  activeSpace: string; // '' = all spaces
 }
 
-const DEFAULT_SETTINGS: LinearBoardSettings = { views: [], openOnLaunch: 'mobile' };
+const DEFAULT_SETTINGS: LinearBoardSettings = { views: [], openOnLaunch: 'mobile', activeSpace: '' };
 
 class LinearBoardSettingTab extends PluginSettingTab {
   plugin: LinearBoardPlugin;
@@ -2452,6 +2700,13 @@ export default class LinearBoardPlugin extends Plugin {
   async saveViews(views: SavedView[]) {
     this.settings.views = views;
     await this.saveData(this.settings);
+  }
+
+  setActiveSpace(space: string) {
+    this.settings.activeSpace = space;
+    void this.saveData(this.settings);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.app.workspace as any).trigger('linear-board:space-changed');
   }
 
   async activateView() {
