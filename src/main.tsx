@@ -259,6 +259,7 @@ interface ProjectInfo {
 
 interface Project {
   slug: string;
+  status: 'active' | 'inactive';
   file: TFile | null; // null = folder exists but folder note is missing (malformed)
   description: string;
   icon: string | null;
@@ -266,27 +267,36 @@ interface Project {
   created: string | null;
 }
 
+function projectBase(p: Project): string {
+  return p.status === 'active' ? PROJECTS_ACTIVE : PROJECTS_INACTIVE;
+}
+
 function loadProjects(app: App): Project[] {
   const out: Project[] = [];
-  const folder = app.vault.getAbstractFileByPath(PROJECTS_ACTIVE);
-  if (!(folder instanceof TFolder)) return out;
-  for (const child of folder.children) {
-    if (!(child instanceof TFolder)) continue;
-    const note = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${child.name}/${child.name}.md`);
-    if (note instanceof TFile) {
-      const fm = app.metadataCache.getFileCache(note)?.frontmatter ?? {};
-      out.push({
-        slug: child.name,
-        file: note,
-        description: typeof fm.description === 'string' ? fm.description : '',
-        icon: typeof fm.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null,
-        color: typeof fm.color === 'string' && fm.color.trim() ? fm.color.trim() : null,
-        created: fm.created ? String(fm.created) : null,
-      });
-    } else {
-      out.push({ slug: child.name, file: null, description: '', icon: null, color: null, created: null });
+  const scan = (base: string, status: 'active' | 'inactive') => {
+    const folder = app.vault.getAbstractFileByPath(base);
+    if (!(folder instanceof TFolder)) return;
+    for (const child of folder.children) {
+      if (!(child instanceof TFolder)) continue;
+      const note = app.vault.getAbstractFileByPath(`${base}/${child.name}/${child.name}.md`);
+      if (note instanceof TFile) {
+        const fm = app.metadataCache.getFileCache(note)?.frontmatter ?? {};
+        out.push({
+          slug: child.name,
+          status,
+          file: note,
+          description: typeof fm.description === 'string' ? fm.description : '',
+          icon: typeof fm.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null,
+          color: typeof fm.color === 'string' && fm.color.trim() ? fm.color.trim() : null,
+          created: fm.created ? String(fm.created) : null,
+        });
+      } else {
+        out.push({ slug: child.name, status, file: null, description: '', icon: null, color: null, created: null });
+      }
     }
-  }
+  };
+  scan(PROJECTS_ACTIVE, 'active');
+  scan(PROJECTS_INACTIVE, 'inactive');
   return out.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
@@ -295,9 +305,10 @@ function loadProjects(app: App): Project[] {
 async function writeProjectNote(
   app: App,
   slug: string,
-  fields: { description: string; icon: string | null; color: string | null }
+  fields: { description: string; icon: string | null; color: string | null },
+  base: string = PROJECTS_ACTIVE
 ): Promise<TFile> {
-  const dir = `${PROJECTS_ACTIVE}/${slug}`;
+  const dir = `${base}/${slug}`;
   await ensureFolder(app, dir);
   const notePath = normalizePath(`${dir}/${slug}.md`);
   const existing = app.vault.getAbstractFileByPath(notePath);
@@ -331,41 +342,37 @@ async function writeProjectNote(
 }
 
 // Renames folder + folder note and re-points every task's project field.
-async function renameProject(app: App, oldSlug: string, newSlug: string) {
-  const dir = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${oldSlug}`);
+async function renameProject(app: App, oldSlug: string, newSlug: string, base: string = PROJECTS_ACTIVE) {
+  const dir = app.vault.getAbstractFileByPath(`${base}/${oldSlug}`);
   if (!(dir instanceof TFolder)) return;
-  await app.fileManager.renameFile(dir, normalizePath(`${PROJECTS_ACTIVE}/${newSlug}`));
-  const note = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${newSlug}/${oldSlug}.md`);
+  await app.fileManager.renameFile(dir, normalizePath(`${base}/${newSlug}`));
+  const note = app.vault.getAbstractFileByPath(`${base}/${newSlug}/${oldSlug}.md`);
   if (note instanceof TFile) {
-    await app.fileManager.renameFile(note, normalizePath(`${PROJECTS_ACTIVE}/${newSlug}/${newSlug}.md`));
+    await app.fileManager.renameFile(note, normalizePath(`${base}/${newSlug}/${newSlug}.md`));
   }
   for (const t of loadTasks(app)) {
     if (t.project === oldSlug) await setProp(app, t, 'project', newSlug);
   }
 }
 
-async function archiveProject(app: App, slug: string) {
-  await ensureFolder(app, PROJECTS_INACTIVE);
-  const dir = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}`);
+async function moveProject(app: App, slug: string, from: string, to: string) {
+  await ensureFolder(app, to);
+  const dir = app.vault.getAbstractFileByPath(`${from}/${slug}`);
   if (dir instanceof TFolder) {
-    await app.fileManager.renameFile(dir, normalizePath(`${PROJECTS_INACTIVE}/${slug}`));
+    await app.fileManager.renameFile(dir, normalizePath(`${to}/${slug}`));
   }
 }
 
+const archiveProject = (app: App, slug: string) => moveProject(app, slug, PROJECTS_ACTIVE, PROJECTS_INACTIVE);
+const restoreProject = (app: App, slug: string) => moveProject(app, slug, PROJECTS_INACTIVE, PROJECTS_ACTIVE);
+
 // icon/color come from the project folder note's frontmatter (icon: lucide
-// name, color: any CSS color).
+// name, color: any CSS color). Includes archived projects so cards keep
+// their styling.
 function loadProjectInfos(app: App): Map<string, ProjectInfo> {
   const map = new Map<string, ProjectInfo>();
-  for (const slug of listProjects(app)) {
-    const note = app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}/${slug}.md`);
-    let icon: string | null = null;
-    let color: string | null = null;
-    if (note instanceof TFile) {
-      const fm = app.metadataCache.getFileCache(note)?.frontmatter;
-      icon = typeof fm?.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null;
-      color = typeof fm?.color === 'string' && fm.color.trim() ? fm.color.trim() : null;
-    }
-    map.set(slug, { icon, color });
+  for (const p of loadProjects(app)) {
+    map.set(p.slug, { icon: p.icon, color: p.color });
   }
   return map;
 }
@@ -669,9 +676,13 @@ class ProjectModal extends Modal {
       new Notice('Project needs a name');
       return;
     }
+    const base = this.existing ? projectBase(this.existing) : PROJECTS_ACTIVE;
     if (this.existing) {
-      if (slug !== this.existing.slug) await renameProject(this.app, this.existing.slug, slug);
-    } else if (this.app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}`)) {
+      if (slug !== this.existing.slug) await renameProject(this.app, this.existing.slug, slug, base);
+    } else if (
+      this.app.vault.getAbstractFileByPath(`${PROJECTS_ACTIVE}/${slug}`) ||
+      this.app.vault.getAbstractFileByPath(`${PROJECTS_INACTIVE}/${slug}`)
+    ) {
       new Notice(`Project "${slug}" already exists`);
       return;
     }
@@ -679,7 +690,7 @@ class ProjectModal extends Modal {
       description: this.description.trim(),
       icon: this.icon,
       color: this.color,
-    });
+    }, base);
     new Notice(this.existing ? `${slug} updated` : `Project ${slug} created`);
     this.onDone();
     this.close();
@@ -1425,7 +1436,9 @@ function ProjectChip({ project, size }: { project: Project; size?: 'lg' }) {
 
 function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
-  const projects = useMemo(() => loadProjects(app), [app, tick]);
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const allProjects = useMemo(() => loadProjects(app), [app, tick]);
+  const projects = allProjects.filter((p) => statusFilter === 'all' || p.status === statusFilter);
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
 
   const counts = (slug: string) => {
@@ -1449,15 +1462,35 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       })
     );
     menu.addSeparator();
-    menu.addItem((i) =>
-      i.setTitle('Archive').setIcon('archive').onClick(async () => {
-        await archiveProject(app, p.slug);
-        new Notice(`${p.slug} archived`);
-        refresh();
-      })
-    );
+    if (p.status === 'active') {
+      menu.addItem((i) =>
+        i.setTitle('Archive').setIcon('archive').onClick(async () => {
+          await archiveProject(app, p.slug);
+          new Notice(`${p.slug} archived`);
+          refresh();
+        })
+      );
+    } else {
+      menu.addItem((i) =>
+        i.setTitle('Restore').setIcon('archive-restore').onClick(async () => {
+          await restoreProject(app, p.slug);
+          new Notice(`${p.slug} restored`);
+          refresh();
+        })
+      );
+    }
     menu.showAtMouseEvent(e.nativeEvent);
   };
+
+  const filterPill = (key: 'active' | 'inactive' | 'all', label: string) => (
+    <button
+      key={key}
+      className={`lb-pill lb-filter-pill${statusFilter === key ? ' lb-pill-active' : ''}`}
+      onClick={() => setStatusFilter(key)}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <StrictMode>
@@ -1467,6 +1500,11 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
           <button className="lb-pill" onClick={() => void plugin.activateView()}>
             Board
           </button>
+          <div className="lb-pills">
+            {filterPill('active', 'Active')}
+            {filterPill('inactive', 'Archived')}
+            {filterPill('all', 'All')}
+          </div>
           <button className="mod-cta lb-new" onClick={() => new ProjectModal(app, null, refresh).open()}>
             + New project
           </button>
@@ -1484,13 +1522,14 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             const c = counts(p.slug);
             return (
               <div
-                key={p.slug}
-                className="lb-projrow"
+                key={`${p.status}/${p.slug}`}
+                className={`lb-projrow${p.status === 'inactive' ? ' lb-projrow-archived' : ''}`}
                 onClick={() => void plugin.openProject(p.slug)}
                 onContextMenu={(e) => rowMenu(p, e)}
               >
                 <span className="lb-projname-col">
                   <ProjectChip project={p} />
+                  {p.status === 'inactive' && <span className="lb-archived-badge">archived</span>}
                 </span>
                 <span className="lb-projdesc">
                   {p.file === null ? (
@@ -1498,7 +1537,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                       className="lb-pill lb-pill-required"
                       onClick={(e) => {
                         e.stopPropagation();
-                        void writeProjectNote(app, p.slug, { description: '', icon: null, color: null }).then(refresh);
+                        void writeProjectNote(app, p.slug, { description: '', icon: null, color: null }, projectBase(p)).then(refresh);
                       }}
                     >
                       Missing folder note — fix structure
@@ -1584,12 +1623,17 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
               <button
                 className="lb-pill"
                 onClick={async () => {
-                  await archiveProject(app, slug);
-                  new Notice(`${slug} archived`);
-                  void plugin.openProjectsView();
+                  if (project.status === 'active') {
+                    await archiveProject(app, slug);
+                    new Notice(`${slug} archived`);
+                  } else {
+                    await restoreProject(app, slug);
+                    new Notice(`${slug} restored`);
+                  }
+                  refresh();
                 }}
               >
-                Archive
+                {project.status === 'active' ? 'Archive' : 'Restore'}
               </button>
               <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
                 + New task
@@ -2052,6 +2096,7 @@ export default class LinearBoardPlugin extends Plugin {
     });
 
     this.addRibbonIcon('kanban-square', 'Open task board', () => void this.activateView());
+    this.addRibbonIcon('package', 'Open projects', () => void this.openProjectsView());
 
     this.addCommand({
       id: 'open-board',

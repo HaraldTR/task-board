@@ -626,6 +626,17 @@
   padding: 24px;
   text-align: center;
 }
+.lb-projrow-archived {
+  opacity: 0.6;
+}
+.lb-archived-badge {
+  margin-left: 6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--lb-text-faint);
+  border: 1px solid var(--lb-border);
+  border-radius: var(--lb-control-radius);
+  padding: 0 5px;
+}
 
 /* ---------- project detail ---------- */
 .lb-proj-head {
