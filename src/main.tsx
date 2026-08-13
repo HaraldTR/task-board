@@ -481,6 +481,18 @@ async function addBodyToTask(app: App, file: TFile, desc: string, files: File[])
   if (parts.length) await app.vault.process(file, (data) => data + parts.join('\n\n') + '\n');
 }
 
+// Focus an existing tab showing this file instead of opening a duplicate.
+async function openFileReuse(app: App, file: TFile) {
+  for (const leaf of app.workspace.getLeavesOfType('markdown')) {
+    if (leaf.view instanceof MarkdownView && leaf.view.file?.path === file.path) {
+      app.workspace.revealLeaf(leaf);
+      app.workspace.setActiveLeaf(leaf, { focus: true });
+      return;
+    }
+  }
+  await app.workspace.getLeaf('tab').openFile(file);
+}
+
 function priorityRank(p: string | null): number {
   return p ? PRIORITIES.indexOf(p as (typeof PRIORITIES)[number]) : PRIORITIES.length;
 }
@@ -975,7 +987,7 @@ function Card({
   projects: Map<string, ProjectInfo>;
   refresh: () => void;
 }) {
-  const openNote = () => void app.workspace.getLeaf('tab').openFile(task.file);
+  const openNote = () => void openFileReuse(app, task.file);
 
   const priorityMenu = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1594,7 +1606,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     );
     menu.addItem((i) =>
       i.setTitle('Open note').setIcon('file-text').onClick(() => {
-        if (p.file) void app.workspace.getLeaf('tab').openFile(p.file);
+        if (p.file) void openFileReuse(app, p.file);
       })
     );
     menu.addSeparator();
@@ -1760,7 +1772,7 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
               </button>
               <button
                 className="lb-pill"
-                onClick={() => project.file && void app.workspace.getLeaf('tab').openFile(project.file)}
+                onClick={() => project.file && void openFileReuse(app, project.file)}
               >
                 Open note
               </button>
@@ -1798,7 +1810,7 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
                 <div
                   key={t.path}
                   className="lb-taskrow"
-                  onClick={() => void app.workspace.getLeaf('tab').openFile(t.file)}
+                  onClick={() => void openFileReuse(app, t.file)}
                   onContextMenu={(e) => taskRowMenu(t, e)}
                 >
                   <span className="lb-id">{t.id}</span>
