@@ -1890,6 +1890,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
 
   return (
     <>
+      <div className="lb-banner-row">
       <button className="lb-pill" onClick={() => void plugin.activateView()} title="Open task board">
         <LucideIcon name="kanban-square" />
         Board
@@ -1931,6 +1932,13 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         </button>
       )}
       <span className="lb-id">{task.id}</span>
+      <span className="lb-banner-spacer" />
+      <button className="lb-pill" onClick={() => new TaskEditModal(app, task, lists).open()}>
+        <LucideIcon name="pencil" />
+        Edit
+      </button>
+      </div>
+      <div className="lb-banner-row">
       <button className="lb-pill" onClick={statusMenu} title="Status">
         <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
       </button>
@@ -1990,11 +1998,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         @{task.assignee}
       </button>
       {task.due && <span className="lb-due">Due {task.due}</span>}
-      <span className="lb-banner-spacer" />
-      <button className="lb-pill" onClick={() => new TaskEditModal(app, task, lists).open()}>
-        <LucideIcon name="pencil" />
-        Edit
-      </button>
+      </div>
     </>
   );
 }

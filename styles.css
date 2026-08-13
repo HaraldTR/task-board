@@ -103,16 +103,20 @@
   font-size: var(--font-ui-smaller);
 }
 
-/* ---------- task-note banner ---------- */
+/* ---------- task-note banner: row 1 navigation, row 2 field pills ---------- */
 .lb-note-banner {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 7px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--lb-border);
   background: var(--lb-surface-2);
   font-size: var(--font-ui-smaller);
+}
+.lb-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .lb-banner-spacer {
   margin-left: auto;
