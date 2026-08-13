@@ -1891,23 +1891,30 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
   return (
     <>
       <div className="lb-banner-row">
-      <button className="lb-pill" onClick={() => void plugin.activateView()} title="Open task board">
-        <LucideIcon name="kanban-square" />
-        Board
+      <NavSeg plugin={plugin} active="tasks" />
+      <span className="lb-breadcrumb">
+        {task.space && (
+          <>
+            <LucideIcon name="chevron-right" />
+            <span
+              className="lb-crumb-space"
+              onClick={() => plugin.setActiveSpace(task.space!)}
+              title="Scope board to this space"
+            >
+              {task.space}
+            </span>
+          </>
+        )}
+        <LucideIcon name="chevron-right" />
+        {task.id}
+      </span>
+      <span className="lb-banner-spacer" />
+      <button className="lb-pill" onClick={() => new TaskEditModal(app, task, lists).open()}>
+        <LucideIcon name="pencil" />
+        Edit
       </button>
-      {task.space && (
-        <span
-          className="lb-space-crumb"
-          onClick={() => plugin.setActiveSpace(task.space!)}
-          title="Scope board to this space"
-        >
-          <span
-            className="lb-dot"
-            style={{ background: loadSpaces(app).find((s) => s.slug === task.space)?.color ?? 'var(--lb-gray)' }}
-          />
-          {task.space} ›
-        </span>
-      )}
+      </div>
+      <div className="lb-banner-row">
       <span
         className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
         style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
@@ -1931,14 +1938,6 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
           <LucideIcon name="arrow-up-right" />
         </button>
       )}
-      <span className="lb-id">{task.id}</span>
-      <span className="lb-banner-spacer" />
-      <button className="lb-pill" onClick={() => new TaskEditModal(app, task, lists).open()}>
-        <LucideIcon name="pencil" />
-        Edit
-      </button>
-      </div>
-      <div className="lb-banner-row">
       <button className="lb-pill" onClick={statusMenu} title="Status">
         <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
       </button>
