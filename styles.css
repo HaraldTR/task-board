@@ -100,6 +100,49 @@
   font-size: var(--font-ui-smaller);
 }
 
+/* header row 1: no divider (row 2 carries it), tighter bottom padding */
+.lb-header-top {
+  border-bottom: none;
+  padding-bottom: 2px;
+}
+
+/* segmented view switcher (Tasks | Projects) */
+.lb-seg {
+  display: inline-flex;
+  border: 1px solid var(--lb-border);
+  border-radius: var(--lb-radius);
+  overflow: hidden;
+}
+.lb-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--lb-text-muted);
+  font-size: var(--font-ui-smaller);
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.lb-seg button + button {
+  border-left: 1px solid var(--lb-border);
+}
+.lb-seg button:hover {
+  color: var(--lb-text);
+  background: var(--lb-hover);
+}
+.lb-seg .lb-seg-active {
+  background: var(--lb-hover);
+  color: var(--lb-text);
+}
+
+/* display-options button: right end of the views row */
+.lb-display {
+  margin-left: auto;
+}
+
 /* pills (filters + quick-add pickers) */
 .lb-pill {
   display: inline-flex;

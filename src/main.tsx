@@ -1495,19 +1495,27 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   return (
     <StrictMode>
       <div className="lb-root">
-        <div className="lb-header">
-          <span className="lb-brand">Projects</span>
-          <button className="lb-pill" onClick={() => void plugin.activateView()}>
-            Board
+        <div className="lb-header lb-header-top">
+          <div className="lb-seg">
+            <button onClick={() => void plugin.activateView()}>
+              <LucideIcon name="kanban-square" />
+              Tasks
+            </button>
+            <button className="lb-seg-active">
+              <LucideIcon name="package" />
+              Projects
+            </button>
+          </div>
+          <button className="mod-cta lb-new" onClick={() => new ProjectModal(app, null, refresh).open()}>
+            + New project
           </button>
+        </div>
+        <div className="lb-header">
           <div className="lb-pills">
             {filterPill('active', 'Active')}
             {filterPill('inactive', 'Archived')}
             {filterPill('all', 'All')}
           </div>
-          <button className="mod-cta lb-new" onClick={() => new ProjectModal(app, null, refresh).open()}>
-            + New project
-          </button>
         </div>
         <div className="lb-projects">
           <div className="lb-projrow lb-projrow-head">
@@ -1824,14 +1832,36 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const valueLabel = (field: FilterField, v: string) =>
     field === 'status' ? COLUMN_LABELS[v] ?? v : v;
 
+  const displayMenu = (e: React.MouseEvent) => {
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i
+        .setTitle('Show closed columns')
+        .setChecked(showClosed)
+        .onClick(() => setShowClosed((v) => !v))
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
   return (
     <StrictMode>
       <div className="lb-root">
-        <div className="lb-header">
-          <span className="lb-brand">Tasks</span>
-          <button className="lb-pill" onClick={() => void plugin.openProjectsView()}>
-            Projects
+        <div className="lb-header lb-header-top">
+          <div className="lb-seg">
+            <button className="lb-seg-active">
+              <LucideIcon name="kanban-square" />
+              Tasks
+            </button>
+            <button onClick={() => void plugin.openProjectsView()}>
+              <LucideIcon name="package" />
+              Projects
+            </button>
+          </div>
+          <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
+            + New
           </button>
+        </div>
+        <div className="lb-header">
           <div className="lb-pills">
             <button
               className={`lb-pill lb-filter-pill${activeView === 'All' ? ' lb-pill-active' : ''}`}
@@ -1858,12 +1888,9 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             <LucideIcon name="plus" />
             Filter{filtered ? ' •' : ''}
           </button>
-          <label className="lb-toggle">
-            <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
-            Closed
-          </label>
-          <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
-            + New
+          <button className="lb-pill lb-display" onClick={displayMenu}>
+            <LucideIcon name="sliders-horizontal" />
+            Display
           </button>
         </div>
         {filterOpen && (
