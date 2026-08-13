@@ -55,6 +55,13 @@
   --lb-title: #f2f2f4;
 }
 
+/* Obsidian pads generic view-content (unlike markdown views) with a rule more
+   specific than a bare class — outrank it so plugin views align exactly with
+   the task-note banner at every zoom level. */
+.workspace-leaf-content .view-content.lb-view {
+  padding: 0;
+}
+
 .lb-root {
   display: flex;
   flex-direction: column;
