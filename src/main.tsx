@@ -1537,6 +1537,7 @@ function Column({
   const [over, setOver] = useState(false);
   return (
     <div
+      data-status={status}
       className={`lb-column${over ? ' lb-column-over' : ''}`}
       onDragOver={(e) => {
         e.preventDefault();
@@ -2719,6 +2720,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   };
 
   const refresh = useCallback(() => setTick((n) => n + 1), []);
+  const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const refs = [
@@ -2729,6 +2731,14 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     ];
     return () => refs.forEach((r) => app.metadataCache.offref(r));
   }, [app, refresh]);
+
+  // Mobile: land on the Today lane instead of the leftmost column.
+  useEffect(() => {
+    if (!Platform.isMobile || mode !== 'board') return;
+    boardRef.current
+      ?.querySelector('[data-status="today"]')
+      ?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [mode]);
 
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
   // Canonical sources (project folders, tags.md) unioned with values in use,
@@ -2950,7 +2960,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
           </div>
         )}
         {mode === 'board' ? (
-          <div className="lb-board">
+          <div className="lb-board" ref={boardRef}>
             {columns.map((c) => (
               <Column
                 key={c}
