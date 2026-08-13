@@ -27,6 +27,7 @@ const TASKS_ACTIVE = 'pm/tasks/active';
 const TASKS_INACTIVE = 'pm/tasks/inactive';
 const PROJECTS_ACTIVE = 'pm/projects/active';
 const PROJECTS_INACTIVE = 'pm/projects/inactive';
+const SPACES_FOLDER = 'pm/spaces';
 const TAGS_FILE = 'pm/tags.md';
 const DEFAULT_ASSIGNEE = 'harald';
 
@@ -256,10 +257,101 @@ function listProjects(app: App): string[] {
 interface ProjectInfo {
   icon: string | null;
   color: string | null;
+  space: string | null;
+}
+
+/* ---------------- spaces ---------------- */
+
+interface Space {
+  slug: string;
+  file: TFile;
+  description: string;
+  icon: string | null;
+  color: string | null;
+}
+
+function loadSpaces(app: App): Space[] {
+  const out: Space[] = [];
+  const folder = app.vault.getAbstractFileByPath(SPACES_FOLDER);
+  if (!(folder instanceof TFolder)) return out;
+  for (const child of folder.children) {
+    if (!(child instanceof TFile) || child.extension !== 'md') continue;
+    const fm = app.metadataCache.getFileCache(child)?.frontmatter;
+    if (fm?.type !== 'space') continue;
+    out.push({
+      slug: child.basename,
+      file: child,
+      description: typeof fm.description === 'string' ? fm.description : '',
+      icon: typeof fm.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null,
+      color: typeof fm.color === 'string' && fm.color.trim() ? fm.color.trim() : null,
+    });
+  }
+  return out.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+// Creating a space also creates its project folder and a catch-all project,
+// so the space is immediately usable.
+async function writeSpaceNote(
+  app: App,
+  slug: string,
+  fields: { description: string; icon: string | null; color: string | null }
+): Promise<TFile> {
+  await ensureFolder(app, SPACES_FOLDER);
+  const notePath = normalizePath(`${SPACES_FOLDER}/${slug}.md`);
+  const existing = app.vault.getAbstractFileByPath(notePath);
+  let file: TFile;
+  if (existing instanceof TFile) {
+    await app.fileManager.processFrontMatter(existing, (fm) => {
+      fm.type = 'space';
+      fm.description = fields.description;
+      fm.icon = fields.icon ?? '';
+      fm.color = fields.color ?? '';
+      if (!fm.created) fm.created = todayStr();
+    });
+    file = existing;
+  } else {
+    file = await app.vault.create(
+      notePath,
+      [
+        '---',
+        'type: space',
+        `description: ${fields.description}`,
+        `icon: ${fields.icon ?? ''}`,
+        `color: "${fields.color ?? ''}"`,
+        `created: ${todayStr()}`,
+        '---',
+        '',
+      ].join('\n')
+    );
+    await ensureFolder(app, `${PROJECTS_ACTIVE}/${slug}`);
+    await writeProjectNote(
+      app,
+      `${slug}-general`,
+      { description: 'Catch-all — peel real projects out of here', icon: null, color: fields.color },
+      `${PROJECTS_ACTIVE}/${slug}`
+    );
+  }
+  return file;
+}
+
+// Rename space note + its folder under active/inactive. Project slugs are
+// unchanged, so tasks need no re-pointing.
+async function renameSpace(app: App, oldSlug: string, newSlug: string) {
+  const note = app.vault.getAbstractFileByPath(`${SPACES_FOLDER}/${oldSlug}.md`);
+  if (note instanceof TFile) {
+    await app.fileManager.renameFile(note, normalizePath(`${SPACES_FOLDER}/${newSlug}.md`));
+  }
+  for (const root of [PROJECTS_ACTIVE, PROJECTS_INACTIVE]) {
+    const dir = app.vault.getAbstractFileByPath(`${root}/${oldSlug}`);
+    if (dir instanceof TFolder) {
+      await app.fileManager.renameFile(dir, normalizePath(`${root}/${newSlug}`));
+    }
+  }
 }
 
 interface Project {
   slug: string;
+  space: string | null; // parent space folder; null = unspaced (legacy/transition)
   status: 'active' | 'inactive';
   file: TFile | null; // null = folder exists but folder note is missing (malformed)
   description: string;
@@ -268,37 +360,64 @@ interface Project {
   created: string | null;
 }
 
+// Directory CONTAINING the project folder (status root + optional space).
 function projectBase(p: Project): string {
-  return p.status === 'active' ? PROJECTS_ACTIVE : PROJECTS_INACTIVE;
+  const root = p.status === 'active' ? PROJECTS_ACTIVE : PROJECTS_INACTIVE;
+  return p.space ? `${root}/${p.space}` : root;
 }
 
+// Projects live at <root>/<space>/<project>/. A folder directly under the
+// root that has its own folder note is treated as an unspaced project
+// (transition state); otherwise a depth-1 folder is a space folder.
 function loadProjects(app: App): Project[] {
   const out: Project[] = [];
-  const scan = (base: string, status: 'active' | 'inactive') => {
-    const folder = app.vault.getAbstractFileByPath(base);
+  const spaceSlugs = new Set(loadSpaces(app).map((s) => s.slug));
+  const pushProject = (base: string, name: string, space: string | null, status: 'active' | 'inactive') => {
+    const note = app.vault.getAbstractFileByPath(`${base}/${name}/${name}.md`);
+    if (note instanceof TFile) {
+      const fm = app.metadataCache.getFileCache(note)?.frontmatter ?? {};
+      out.push({
+        slug: name,
+        space,
+        status,
+        file: note,
+        description: typeof fm.description === 'string' ? fm.description : '',
+        icon: typeof fm.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null,
+        color: typeof fm.color === 'string' && fm.color.trim() ? fm.color.trim() : null,
+        created: fm.created ? String(fm.created) : null,
+      });
+    } else {
+      out.push({ slug: name, space, status, file: null, description: '', icon: null, color: null, created: null });
+    }
+  };
+  const scan = (root: string, status: 'active' | 'inactive') => {
+    const folder = app.vault.getAbstractFileByPath(root);
     if (!(folder instanceof TFolder)) return;
     for (const child of folder.children) {
       if (!(child instanceof TFolder)) continue;
-      const note = app.vault.getAbstractFileByPath(`${base}/${child.name}/${child.name}.md`);
-      if (note instanceof TFile) {
-        const fm = app.metadataCache.getFileCache(note)?.frontmatter ?? {};
-        out.push({
-          slug: child.name,
-          status,
-          file: note,
-          description: typeof fm.description === 'string' ? fm.description : '',
-          icon: typeof fm.icon === 'string' && fm.icon.trim() ? fm.icon.trim() : null,
-          color: typeof fm.color === 'string' && fm.color.trim() ? fm.color.trim() : null,
-          created: fm.created ? String(fm.created) : null,
-        });
+      const ownNote = app.vault.getAbstractFileByPath(`${root}/${child.name}/${child.name}.md`);
+      if (!spaceSlugs.has(child.name) && ownNote instanceof TFile) {
+        pushProject(root, child.name, null, status);
       } else {
-        out.push({ slug: child.name, status, file: null, description: '', icon: null, color: null, created: null });
+        for (const sub of child.children) {
+          if (sub instanceof TFolder) pushProject(`${root}/${child.name}`, sub.name, child.name, status);
+        }
       }
     }
   };
   scan(PROJECTS_ACTIVE, 'active');
   scan(PROJECTS_INACTIVE, 'inactive');
   return out.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+async function moveProjectToSpace(app: App, p: Project, space: string | null) {
+  const root = p.status === 'active' ? PROJECTS_ACTIVE : PROJECTS_INACTIVE;
+  const toDir = space ? `${root}/${space}` : root;
+  await ensureFolder(app, toDir);
+  const dir = app.vault.getAbstractFileByPath(`${projectBase(p)}/${p.slug}`);
+  if (dir instanceof TFolder) {
+    await app.fileManager.renameFile(dir, normalizePath(`${toDir}/${p.slug}`));
+  }
 }
 
 // The single writer for project structure: guarantees folder + folder note
