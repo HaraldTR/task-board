@@ -333,17 +333,19 @@
   color: var(--lb-text);
   border-color: var(--lb-active-border);
 }
-/* add-filter button: unbordered indigo accent, Linear-style */
+/* add-filter button: outlined in the CTA accent — secondary create action,
+   same family as the filled + New button */
 .lb-filter-btn {
-  color: var(--lb-active-border);
-  border-color: transparent;
+  color: var(--interactive-accent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 65%, var(--lb-border));
 }
 .lb-filter-btn:hover {
-  color: var(--lb-active-border);
-  background: color-mix(in srgb, var(--lb-indigo) 12%, transparent);
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
 }
 .lb-filter-btn.lb-pill-active {
-  border-color: var(--lb-active-border);
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
 }
 
 /* ---------- board ---------- */
