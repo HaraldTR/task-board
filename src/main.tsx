@@ -2262,6 +2262,11 @@ function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
           </button>
         </div>
         <div className="lb-projects">
+          <div className="lb-projrow lb-projrow-head">
+            <span className="lb-projname-col">Name</span>
+            <span className="lb-projdesc"></span>
+            <span className="lb-projcount lb-projcount-wide">Tasks</span>
+          </div>
           {allTags.map((tag) => {
             const def = defs.find((d) => d.name === tag);
             return (
@@ -2324,6 +2329,12 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
           </button>
         </div>
         <div className="lb-projects">
+          <div className="lb-projrow lb-projrow-head">
+            <span className="lb-projname-col">Name</span>
+            <span className="lb-projdesc">Description</span>
+            <span className="lb-projcount lb-projcount-wide">Projects</span>
+            <span className="lb-projcount lb-projcount-wide">Open</span>
+          </div>
           {spaces.map((s) => {
             const projs = projects.filter((p) => p.space === s.slug && p.status === 'active');
             const open = tasks.filter(
