@@ -2353,8 +2353,8 @@ export default class LinearBoardPlugin extends Plugin {
 
   removeBanners() {
     for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
-      const content = leaf.view?.contentEl;
-      if (!content) continue;
+      if (!(leaf.view instanceof MarkdownView)) continue;
+      const content = leaf.view.contentEl;
       const banner = content.querySelector(':scope > .lb-note-banner') as
         | (HTMLElement & { __lbRoot?: Root })
         | null;
