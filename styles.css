@@ -225,6 +225,14 @@
 .lb-closed-toggle {
   margin-left: auto;
 }
+/* icon-only mode toggle: let the icon fill the button */
+.lb-mode-seg button {
+  padding: 0 7px;
+}
+.lb-mode-seg .lb-view-icon svg {
+  width: 16px;
+  height: 16px;
+}
 
 /* tag inspector (tasks view panel) */
 .lb-tags-panel {
@@ -1183,6 +1191,16 @@
   }
   .lb-space-sw {
     height: 28px;
+  }
+  .lb-mode-seg {
+    height: 28px;
+  }
+  .lb-mode-seg button {
+    padding: 0 9px;
+  }
+  .lb-mode-seg .lb-view-icon svg {
+    width: 19px;
+    height: 19px;
   }
 
   /* list rows: no horizontal scroll — drop low-value columns, let name flex */

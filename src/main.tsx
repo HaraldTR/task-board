@@ -2868,7 +2868,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             Closed
             <span className="lb-count">{closedCount}</span>
           </button>
-          <div className="lb-seg">
+          <div className="lb-seg lb-mode-seg">
             <button
               className={mode === 'list' ? 'lb-seg-active' : ''}
               onClick={() => setMode('list')}
