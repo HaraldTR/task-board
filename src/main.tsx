@@ -23,6 +23,7 @@ const VIEW_TYPE = 'linear-board-view';
 const PROJECTS_VIEW_TYPE = 'linear-projects-view';
 const PROJECT_VIEW_TYPE = 'linear-project-view';
 const SPACES_VIEW_TYPE = 'linear-spaces-view';
+const TAGS_VIEW_TYPE = 'linear-tags-view';
 const TASKS_FOLDER = 'pm/tasks';
 const TASKS_ACTIVE = 'pm/tasks/active';
 const TASKS_INACTIVE = 'pm/tasks/inactive';
@@ -1270,6 +1271,7 @@ function Card({
   allTags,
   allAssignees,
   projects,
+  tagDefs,
   refresh,
 }: {
   app: App;
@@ -1278,6 +1280,7 @@ function Card({
   allTags: string[];
   allAssignees: string[];
   projects: Map<string, ProjectInfo>;
+  tagDefs: Map<string, TagDef>;
   refresh: () => void;
 }) {
   const openNote = () => void openFileReuse(app, task.file);
@@ -1412,20 +1415,25 @@ function Card({
         >
           {task.size ?? '◇'}
         </span>
-        {task.tags.map((tag) => (
-          <span
-            key={tag}
-            className="lb-tag"
-            onClick={(e) =>
-              tagsMenu(app, allTags, task.tags, async (tags) => {
-                await setTags(app, task, tags);
-                refresh();
-              }, e)
-            }
-          >
-            {tag}
-          </span>
-        ))}
+        {task.tags.map((tag) => {
+          const def = tagDefs.get(tag);
+          return (
+            <span
+              key={tag}
+              className="lb-tag"
+              style={def?.color ? ({ '--tag-color': def.color } as React.CSSProperties) : undefined}
+              onClick={(e) =>
+                tagsMenu(app, allTags, task.tags, async (tags) => {
+                  await setTags(app, task, tags);
+                  refresh();
+                }, e)
+              }
+            >
+              {def?.icon && <LucideIcon name={def.icon} />}
+              {tag}
+            </span>
+          );
+        })}
         <span
           className="lb-tag lb-tag-add lb-fade-in"
           onClick={(e) =>
@@ -1476,6 +1484,7 @@ function Column({
   allTags,
   allAssignees,
   projects,
+  tagDefs,
   refresh,
 }: {
   app: App;
@@ -1485,6 +1494,7 @@ function Column({
   allTags: string[];
   allAssignees: string[];
   projects: Map<string, ProjectInfo>;
+  tagDefs: Map<string, TagDef>;
   refresh: () => void;
 }) {
   const [over, setOver] = useState(false);
@@ -1522,6 +1532,7 @@ function Column({
             allTags={allTags}
             allAssignees={allAssignees}
             projects={projects}
+            tagDefs={tagDefs}
             refresh={refresh}
           />
         ))}
@@ -1772,25 +1783,40 @@ function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: LinearBoardPl
   );
 }
 
-function NavSeg({ plugin, active }: { plugin: LinearBoardPlugin; active: 'spaces' | 'projects' | 'tasks' }) {
+function NavSeg({
+  plugin,
+  active,
+}: {
+  plugin: LinearBoardPlugin;
+  active: 'spaces' | 'projects' | 'tasks' | 'tags';
+}) {
   return (
-    <div className="lb-seg">
-      <button className={active === 'spaces' ? 'lb-seg-active' : ''} onClick={() => void plugin.openSpacesView()}>
-        <LucideIcon name="layers" />
-        Spaces
-      </button>
+    <>
+      <div className="lb-seg">
+        <button className={active === 'spaces' ? 'lb-seg-active' : ''} onClick={() => void plugin.openSpacesView()}>
+          <LucideIcon name="layers" />
+          Spaces
+        </button>
+        <button
+          className={active === 'projects' ? 'lb-seg-active' : ''}
+          onClick={() => void plugin.openProjectsView()}
+        >
+          <LucideIcon name="package" />
+          Projects
+        </button>
+        <button className={active === 'tasks' ? 'lb-seg-active' : ''} onClick={() => void plugin.activateView()}>
+          <LucideIcon name="kanban-square" />
+          Tasks
+        </button>
+      </div>
       <button
-        className={active === 'projects' ? 'lb-seg-active' : ''}
-        onClick={() => void plugin.openProjectsView()}
+        className={`lb-pill${active === 'tags' ? ' lb-pill-active' : ''}`}
+        onClick={() => void plugin.openTagsView()}
       >
-        <LucideIcon name="package" />
-        Projects
+        <LucideIcon name="tag" />
+        Tags
       </button>
-      <button className={active === 'tasks' ? 'lb-seg-active' : ''} onClick={() => void plugin.activateView()}>
-        <LucideIcon name="kanban-square" />
-        Tasks
-      </button>
-    </div>
+    </>
   );
 }
 
@@ -1931,11 +1957,20 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
       >
         {task.size ?? '◇'}
       </span>
-      {task.tags.map((tag) => (
-        <span key={tag} className="lb-tag" onClick={changeTags}>
-          {tag}
-        </span>
-      ))}
+      {task.tags.map((tag) => {
+        const def = loadTagRegistry(app).find((d) => d.name === tag);
+        return (
+          <span
+            key={tag}
+            className="lb-tag"
+            style={def?.color ? ({ '--tag-color': def.color } as React.CSSProperties) : undefined}
+            onClick={changeTags}
+          >
+            {def?.icon && <LucideIcon name={def.icon} />}
+            {tag}
+          </span>
+        );
+      })}
       <span className="lb-tag lb-tag-add" onClick={changeTags} title="Add tag">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M5 12h14" />
@@ -2026,31 +2061,105 @@ function TaskRow({
   );
 }
 
-// Tag inspector: registry ∪ in-use tags with counts and cross-vault
-// rename/delete. Lives on the Tasks view.
-function TagCloud({ app }: { app: App }) {
+// Edit a tag's name, icon, and color; renaming propagates to every task.
+class TagEditModal extends Modal {
+  private name: string;
+  private icon: string | null;
+  private color: string | null;
+
+  constructor(app: App, private existing: TagDef | null, private onDone: () => void) {
+    super(app);
+    this.name = existing?.name ?? '';
+    this.icon = existing?.icon ?? null;
+    this.color = existing?.color ?? null;
+  }
+
+  onOpen() {
+    this.modalEl.addClass('lb-edit-modal');
+    this.titleEl.setText(this.existing ? `Edit tag: ${this.existing.name}` : 'New tag');
+
+    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Tag name (e.g. bug, idea)…' });
+    name.style.width = '100%';
+    name.value = this.name;
+    name.addEventListener('input', () => (this.name = name.value));
+
+    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
+    const iconBtns = new Map<string, HTMLElement>();
+    const paintIcons = () => {
+      for (const [ic, el] of iconBtns) el.toggleClass('lb-icon-selected', this.icon === ic);
+    };
+    for (const ic of PROJECT_ICONS) {
+      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
+      setIcon(b, ic);
+      b.addEventListener('click', () => {
+        this.icon = this.icon === ic ? null : ic;
+        paintIcons();
+      });
+      iconBtns.set(ic, b);
+    }
+    paintIcons();
+
+    const swatchRow = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
+    for (const c of PROJECT_COLORS) {
+      const b = swatchRow.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
+      b.style.background = c;
+      b.toggleClass('lb-swatch-selected', this.color === c);
+      b.addEventListener('click', () => {
+        this.color = this.color === c ? null : c;
+        for (const el of Array.from(swatchRow.children)) {
+          (el as HTMLElement).toggleClass('lb-swatch-selected', el.getAttribute('aria-label') === this.color);
+        }
+      });
+    }
+
+    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const save = actions.createEl('button', { text: this.existing ? 'Save' : 'Create tag', cls: 'mod-cta' });
+    save.addEventListener('click', () => void this.save());
+  }
+
+  async save() {
+    const tag = slugify(this.name);
+    if (!tag) {
+      new Notice('Tag needs a name');
+      return;
+    }
+    if (this.existing && tag !== this.existing.name) {
+      await renameTagEverywhere(this.app, this.existing.name, tag);
+    }
+    await upsertTagDef(this.app, { name: tag, icon: this.icon, color: this.color });
+    new Notice(this.existing ? `Tag ${tag} updated` : `Tag ${tag} created`);
+    this.onDone();
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+// Tags overview: registry ∪ in-use tags with counts, icons, colors and
+// cross-vault rename/delete.
+function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
-  const registry = useMemo(() => loadTagRegistry(app), [app, tick]);
+  const defs = useMemo(() => loadTagRegistry(app), [app, tick]);
   const tagCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of tasks) for (const tag of t.tags) m.set(tag, (m.get(tag) ?? 0) + 1);
     return m;
   }, [tasks]);
-  const allTags = [...new Set([...registry, ...tagCounts.keys()])].sort();
+  const allTags = [...new Set([...defs.map((d) => d.name), ...tagCounts.keys()])].sort();
 
-  const tagMenuFor = (tag: string, e: React.MouseEvent) => {
+  const rowMenu = (tag: string, def: TagDef | undefined, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const menu = new Menu();
     menu.addItem((i) =>
-      i.setTitle('Rename everywhere…').setIcon('pencil').onClick(() => {
-        new TextPromptModal(app, { title: `Rename tag: ${tag}`, placeholder: 'New name…', slug: true, initial: tag, cta: 'Rename' }, (v) => {
-          if (v !== tag) void renameTagEverywhere(app, tag, v).then(refresh);
-        }).open();
-      })
+      i.setTitle('Edit…').setIcon('pencil').onClick(() =>
+        new TagEditModal(app, def ?? { name: tag, icon: null, color: null }, refresh).open()
+      )
     );
-    if (!registry.includes(tag)) {
+    if (!def) {
       menu.addItem((i) =>
         i.setTitle('Add to registry').setIcon('plus').onClick(() => void addTagToRegistry(app, tag).then(refresh))
       );
@@ -2067,33 +2176,48 @@ function TagCloud({ app }: { app: App }) {
   };
 
   return (
-    <div className="lb-tag-cloud">
-      {allTags.map((tag) => (
-        <span
-          key={tag}
-          className={`lb-tag lb-tag-inspect${registry.includes(tag) ? '' : ' lb-tag-unregistered'}`}
-          onClick={(e) => tagMenuFor(tag, e)}
-          onContextMenu={(e) => tagMenuFor(tag, e)}
-          title={registry.includes(tag) ? 'In registry' : 'Used on tasks but not in registry'}
-        >
-          {tag} <span className="lb-count">{tagCounts.get(tag) ?? 0}</span>
-        </span>
-      ))}
-      <span
-        className="lb-tag lb-tag-add"
-        onClick={() =>
-          new TextPromptModal(app, { title: 'New tag', placeholder: 'e.g. bug, idea', slug: true }, (t) =>
-            void addTagToRegistry(app, t).then(refresh)
-          ).open()
-        }
-        title="Add tag to registry"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M5 12h14" />
-          <path d="M12 5v14" />
-        </svg>
-      </span>
-    </div>
+    <StrictMode>
+      <div className="lb-root">
+        <div className="lb-header lb-header-top">
+          <NavSeg plugin={plugin} active="tags" />
+          <button
+            className="mod-cta lb-new"
+            onClick={() => new TagEditModal(app, null, refresh).open()}
+          >
+            + New tag
+          </button>
+        </div>
+        <div className="lb-projects">
+          {allTags.map((tag) => {
+            const def = defs.find((d) => d.name === tag);
+            return (
+              <div
+                key={tag}
+                className="lb-projrow"
+                onClick={() => new TagEditModal(app, def ?? { name: tag, icon: null, color: null }, refresh).open()}
+                onContextMenu={(e) => rowMenu(tag, def, e)}
+                title="Click to edit · right-click for actions"
+              >
+                <span className="lb-projname-col">
+                  <span
+                    className="lb-tag lb-tag-inspect"
+                    style={def?.color ? ({ '--tag-color': def.color } as React.CSSProperties) : undefined}
+                  >
+                    {def?.icon && <LucideIcon name={def.icon} />}
+                    {tag}
+                  </span>
+                </span>
+                <span className="lb-projdesc">
+                  {def ? '' : 'Used on tasks but not in the registry'}
+                </span>
+                <span className="lb-projcount lb-projcount-wide">{tagCounts.get(tag) ?? 0} tasks</span>
+              </div>
+            );
+          })}
+          {allTags.length === 0 && <div className="lb-empty">No tags yet — create the first one.</div>}
+        </div>
+      </div>
+    </StrictMode>
   );
 }
 
@@ -2498,7 +2622,6 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [activeView, setActiveView] = useState('All');
   const [views, setViews] = useState<SavedView[]>(plugin.settings.views);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [tagsOpen, setTagsOpen] = useState(false);
   const [mode, setModeState] = useState<'board' | 'list'>(plugin.settings.boardMode ?? 'board');
   const setMode = (m: 'board' | 'list') => {
     setModeState(m);
@@ -2540,6 +2663,10 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     [tasks]
   );
   const projectInfos = useMemo(() => loadProjectInfos(app), [app, tick]);
+  const tagDefs = useMemo(
+    () => new Map(loadTagRegistry(app).map((d) => [d.name, d] as const)),
+    [app, tick]
+  );
 
   const fieldValues: Record<FilterField, string[]> = useMemo(
     () => ({
@@ -2629,16 +2756,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const valueLabel = (field: FilterField, v: string) =>
     field === 'status' ? COLUMN_LABELS[v] ?? v : v;
 
-  const displayMenu = (e: React.MouseEvent) => {
-    const menu = new Menu();
-    menu.addItem((i) =>
-      i
-        .setTitle('Show closed columns')
-        .setChecked(showClosed)
-        .onClick(() => setShowClosed((v) => !v))
-    );
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
+  const closedCount = visible.filter((t) => CLOSED.includes(t.status)).length;
 
   return (
     <StrictMode>
@@ -2694,22 +2812,15 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             </button>
           </div>
           <button
-            className={`lb-pill${tagsOpen ? ' lb-pill-active' : ''}`}
-            onClick={() => setTagsOpen((o) => !o)}
+            className={`lb-pill${showClosed ? ' lb-pill-active' : ''}`}
+            onClick={() => setShowClosed((v) => !v)}
+            title="Show or hide the Done and Cancelled lanes"
           >
-            <LucideIcon name="tag" />
-            Tags
-          </button>
-          <button className="lb-pill lb-display" onClick={displayMenu}>
-            <LucideIcon name="sliders-horizontal" />
-            Display
+            <LucideIcon name={showClosed ? 'eye' : 'eye-off'} />
+            Closed
+            <span className="lb-count">{closedCount}</span>
           </button>
         </div>
-        {tagsOpen && (
-          <div className="lb-tags-panel">
-            <TagCloud app={app} />
-          </div>
-        )}
         {filterOpen && (
           <div className="lb-filter-panel">
             {FILTER_FIELDS.map((f) => (
@@ -2760,6 +2871,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                 allTags={allTags}
                 allAssignees={allAssignees}
                 projects={projectInfos}
+                tagDefs={tagDefs}
                 refresh={refresh}
                 tasks={visible
                   .filter((t) => t.status === c)
@@ -2946,6 +3058,36 @@ class SpacesListView extends ItemView {
   }
 }
 
+class TagsListView extends ItemView {
+  root: Root | null = null;
+
+  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+    super(leaf);
+  }
+
+  getViewType() {
+    return TAGS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return 'Tags';
+  }
+  getIcon() {
+    return 'tag';
+  }
+
+  async onOpen() {
+    this.contentEl.empty();
+    this.contentEl.addClass('lb-view');
+    this.root = createRoot(this.contentEl);
+    this.root.render(<TagsApp app={this.app} plugin={this.plugin} />);
+  }
+
+  async onClose() {
+    this.root?.unmount();
+    this.root = null;
+  }
+}
+
 class ProjectDetailView extends ItemView {
   root: Root | null = null;
   slug = '';
@@ -3001,6 +3143,7 @@ export default class LinearBoardPlugin extends Plugin {
     this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsListView(leaf, this));
     this.registerView(PROJECT_VIEW_TYPE, (leaf) => new ProjectDetailView(leaf, this));
     this.registerView(SPACES_VIEW_TYPE, (leaf) => new SpacesListView(leaf, this));
+    this.registerView(TAGS_VIEW_TYPE, (leaf) => new TagsListView(leaf, this));
     this.addSettingTab(new LinearBoardSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
@@ -3034,6 +3177,12 @@ export default class LinearBoardPlugin extends Plugin {
       id: 'open-spaces',
       name: 'Open spaces',
       callback: () => void this.openSpacesView(),
+    });
+
+    this.addCommand({
+      id: 'open-tags',
+      name: 'Open tags',
+      callback: () => void this.openTagsView(),
     });
 
     this.addCommand({
@@ -3148,6 +3297,17 @@ export default class LinearBoardPlugin extends Plugin {
     }
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: SPACES_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openTagsView() {
+    const existing = this.app.workspace.getLeavesOfType(TAGS_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.setViewState({ type: TAGS_VIEW_TYPE, active: true });
     this.app.workspace.revealLeaf(leaf);
   }
 

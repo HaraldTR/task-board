@@ -488,17 +488,25 @@
   font-variant-numeric: tabular-nums;
 }
 .lb-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: var(--lb-control-font);
   font-weight: 400;
-  border: 1px solid var(--lb-border);
+  border: 1px solid color-mix(in srgb, var(--tag-color, var(--lb-border)) 50%, var(--lb-border));
   border-radius: var(--lb-control-radius);
   padding: 0 5px;
   line-height: var(--lb-control-h);
-  color: var(--lb-text-muted);
-  max-width: 100px;
+  color: var(--tag-color, var(--lb-text-muted));
+  background: color-mix(in srgb, var(--tag-color, transparent) 10%, transparent);
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lb-tag .lb-view-icon svg {
+  width: 11px;
+  height: 11px;
 }
 .lb-tag:hover {
   color: var(--lb-text);
