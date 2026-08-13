@@ -126,8 +126,9 @@
   margin-left: -3px;
 }
 /* hide Obsidian's raw Properties list on task notes — the banner replaces it */
-.lb-task-note .metadata-container {
-  display: none;
+.lb-task-note .metadata-container,
+.lb-task-note .frontmatter-container {
+  display: none !important;
 }
 
 /* header row 1: no divider (row 2 carries it), tighter bottom padding */
