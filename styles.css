@@ -1169,7 +1169,7 @@
     height: 32px;
   }
   .lb-seg button {
-    padding: 0 8px;
+    padding: 0 7px;
     gap: 4px;
   }
   .lb-header-top {
@@ -1204,8 +1204,8 @@
     padding: 0 9px;
   }
   .lb-header .lb-view-icon svg {
-    width: 19px;
-    height: 19px;
+    width: 18px;
+    height: 18px;
   }
 
   /* list rows: no horizontal scroll — drop low-value columns, let name flex */
