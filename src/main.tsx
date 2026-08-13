@@ -24,6 +24,9 @@ const PROJECTS_VIEW_TYPE = 'linear-projects-view';
 const PROJECT_VIEW_TYPE = 'linear-project-view';
 const SPACES_VIEW_TYPE = 'linear-spaces-view';
 const TAGS_VIEW_TYPE = 'linear-tags-view';
+
+// Overview tabs stay docked leftmost in this order; other tabs flow right.
+const PINNED_VIEW_ORDER = [SPACES_VIEW_TYPE, PROJECTS_VIEW_TYPE, VIEW_TYPE, TAGS_VIEW_TYPE];
 const TASKS_FOLDER = 'pm/tasks';
 const TASKS_ACTIVE = 'pm/tasks/active';
 const TASKS_INACTIVE = 'pm/tasks/inactive';
@@ -3216,9 +3219,15 @@ export default class LinearBoardPlugin extends Plugin {
         void this.activateView();
       }
       this.decorateMarkdownLeaves();
+      this.dockOverviewTabs();
     });
 
-    this.registerEvent(this.app.workspace.on('layout-change', () => this.decorateMarkdownLeaves()));
+    this.registerEvent(
+      this.app.workspace.on('layout-change', () => {
+        this.decorateMarkdownLeaves();
+        this.dockOverviewTabs();
+      })
+    );
     this.registerEvent(this.app.workspace.on('file-open', () => this.decorateMarkdownLeaves()));
     this.registerEvent(this.app.metadataCache.on('changed', () => this.decorateMarkdownLeaves()));
 
@@ -3294,6 +3303,47 @@ export default class LinearBoardPlugin extends Plugin {
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
     this.app.workspace.revealLeaf(leaf);
+  }
+
+  private docking = false;
+
+  // Keep the overview tabs (Spaces/Projects/Tasks/Tags) leftmost in their tab
+  // group, in canonical order, so other tabs always open to their right.
+  // Uses workspace internals (tab-container children) — no public API exists.
+  dockOverviewTabs() {
+    if (this.docking) return;
+    type TabGroup = {
+      children: WorkspaceLeaf[];
+      currentTab: number;
+      recomputeChildrenDimensions?: () => void;
+    };
+    const rank = (l: WorkspaceLeaf) => {
+      const r = PINNED_VIEW_ORDER.indexOf(l.view?.getViewType?.() ?? '');
+      return r === -1 ? Number.MAX_SAFE_INTEGER : r;
+    };
+    const groups = new Set<TabGroup>();
+    for (const t of PINNED_VIEW_ORDER) {
+      for (const leaf of this.app.workspace.getLeavesOfType(t)) {
+        const parent = (leaf as unknown as { parent?: TabGroup }).parent;
+        if (parent?.children) groups.add(parent);
+      }
+    }
+    for (const parent of groups) {
+      const children = parent.children;
+      const sorted = [...children].sort((a, b) => rank(a) - rank(b)); // stable: non-plugin order preserved
+      if (sorted.every((c, i) => c === children[i])) continue;
+      this.docking = true;
+      try {
+        const active = children[parent.currentTab];
+        children.length = 0;
+        children.push(...sorted);
+        const idx = sorted.indexOf(active);
+        if (idx >= 0) parent.currentTab = idx;
+        parent.recomputeChildrenDimensions?.();
+      } finally {
+        this.docking = false;
+      }
+    }
   }
 
   // Task notes get a banner with navigation + field pills instead of the raw
