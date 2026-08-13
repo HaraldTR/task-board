@@ -2261,6 +2261,7 @@ function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             + New<span className="lb-new-suffix">tag</span>
           </button>
         </div>
+        <div className="lb-header" />
         <div className="lb-projects">
           <div className="lb-projrow lb-projrow-head">
             <span className="lb-projname-col">Name</span>
@@ -2328,6 +2329,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             + New<span className="lb-new-suffix">space</span>
           </button>
         </div>
+        <div className="lb-header" />
         <div className="lb-projects">
           <div className="lb-projrow lb-projrow-head">
             <span className="lb-projname-col">Name</span>
