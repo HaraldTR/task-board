@@ -123,7 +123,7 @@
 }
 /* system-stamped dates: visible, not editable from the banner */
 .lb-date-ro {
-  color: var(--lb-text-faint);
+  color: var(--lb-text-muted);
   font-size: var(--font-ui-smaller);
   white-space: nowrap;
 }
