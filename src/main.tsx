@@ -27,6 +27,16 @@ const TAGS_VIEW_TYPE = 'task-board-tags-view';
 
 // Overview tabs stay docked leftmost in this order; other tabs flow right.
 const PINNED_VIEW_ORDER = [SPACES_VIEW_TYPE, PROJECTS_VIEW_TYPE, VIEW_TYPE, TAGS_VIEW_TYPE];
+
+// Pre-rename view types (plugin id was linear-board) -> current types.
+// Saved workspace layouts may still reference the old ones.
+const RENAMED_VIEW_TYPES: Record<string, string> = {
+  'linear-board-view': VIEW_TYPE,
+  'linear-projects-view': PROJECTS_VIEW_TYPE,
+  'linear-project-view': PROJECT_VIEW_TYPE,
+  'linear-spaces-view': SPACES_VIEW_TYPE,
+  'linear-tags-view': TAGS_VIEW_TYPE,
+};
 // Vault layout + identity — configurable in Settings; applyConfig() derives
 // every path from the root folder so they can never drift apart.
 let TASKS_FOLDER = 'pm/tasks';
@@ -3136,6 +3146,7 @@ export default class TaskBoardPlugin extends Plugin {
     this.addSettingTab(new TaskBoardSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
+      this.migrateRenamedViews();
       const mode = this.settings.openOnLaunch;
       if (mode === 'always' || (mode === 'mobile' && Platform.isMobile)) {
         void this.activateView();
@@ -3228,6 +3239,15 @@ export default class TaskBoardPlugin extends Plugin {
 
   openTagsView() {
     return this.revealView(TAGS_VIEW_TYPE);
+  }
+
+  // Re-point ghost tabs left over from the linear-board -> task-board rename.
+  migrateRenamedViews() {
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      const state = leaf.getViewState();
+      const to = RENAMED_VIEW_TYPES[state.type];
+      if (to) void leaf.setViewState({ ...state, type: to });
+    });
   }
 
   private docking = false;
