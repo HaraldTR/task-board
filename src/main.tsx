@@ -1925,32 +1925,80 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
   );
 }
 
-// Simple overview: every space with its counts, plus the tag registry.
-function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+// Shared task row for list renderings (board list mode + project detail).
+function TaskRow({
+  app,
+  task,
+  lists,
+  projects,
+  showProject,
+  refresh,
+}: {
+  app: App;
+  task: TaskItem;
+  lists: PickerLists;
+  projects: Map<string, ProjectInfo>;
+  showProject: boolean;
+  refresh: () => void;
+}) {
+  const menu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const m = new Menu();
+    m.addItem((i) => i.setTitle('Edit…').setIcon('pencil').onClick(() => new TaskEditModal(app, task, lists).open()));
+    m.addSeparator();
+    m.addItem((i) =>
+      i.setTitle('Delete').setIcon('trash').onClick(async () => {
+        await app.vault.trash(task.file, true);
+        refresh();
+      })
+    );
+    m.showAtMouseEvent(e.nativeEvent);
+  };
+  const proj = task.project ? projects.get(task.project) : undefined;
+  return (
+    <div className="lb-taskrow" onClick={() => void openFileReuse(app, task.file)} onContextMenu={menu}>
+      <span className="lb-id">{task.id}</span>
+      {showProject && task.project && (
+        <span
+          className="lb-project"
+          style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+        >
+          {proj?.icon && <LucideIcon name={proj.icon} />}
+          <span className="lb-project-name">{task.project}</span>
+        </span>
+      )}
+      <span className="lb-taskrow-title">{task.title}</span>
+      {task.priority && (
+        <span className={`lb-priority lb-priority-${task.priority.toLowerCase()}`}>
+          {[1, 2, 3, 4].map((n) => (
+            <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[task.priority!] ? ' lb-bar-on' : ''}`} />
+          ))}
+        </span>
+      )}
+      {task.size && <span className="lb-size">{task.size}</span>}
+      {task.due && <span className="lb-due">{task.due}</span>}
+      {task.assignee !== DEFAULT_ASSIGNEE && (
+        <span className="lb-avatar" style={{ background: avatarColor(task.assignee) }}>
+          {task.assignee.charAt(0).toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Tag inspector: registry ∪ in-use tags with counts and cross-vault
+// rename/delete. Lives on the Tasks view.
+function TagCloud({ app }: { app: App }) {
   const [tick, refresh] = useVaultTick(app);
-  const spaces = useMemo(() => loadSpaces(app), [app, tick]);
-  const projects = useMemo(() => loadProjects(app), [app, tick]);
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
   const registry = useMemo(() => loadTagRegistry(app), [app, tick]);
-
   const tagCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of tasks) for (const tag of t.tags) m.set(tag, (m.get(tag) ?? 0) + 1);
     return m;
   }, [tasks]);
   const allTags = [...new Set([...registry, ...tagCounts.keys()])].sort();
-
-  const spaceRowMenu = (s: Space, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const menu = new Menu();
-    menu.addItem((i) => i.setTitle('Edit…').setIcon('pencil').onClick(() => new SpaceModal(app, s, refresh).open()));
-    menu.addItem((i) => i.setTitle('Open note').setIcon('file-text').onClick(() => void openFileReuse(app, s.file)));
-    menu.addItem((i) =>
-      i.setTitle('New project here…').setIcon('plus').onClick(() => new ProjectModal(app, null, refresh, s.slug).open())
-    );
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
 
   const tagMenuFor = (tag: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -1975,6 +2023,56 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     menu.addSeparator();
     menu.addItem((i) =>
       i.setTitle('Delete everywhere').setIcon('trash').onClick(() => void deleteTagEverywhere(app, tag).then(refresh))
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  return (
+    <div className="lb-tag-cloud">
+      {allTags.map((tag) => (
+        <span
+          key={tag}
+          className={`lb-tag lb-tag-inspect${registry.includes(tag) ? '' : ' lb-tag-unregistered'}`}
+          onClick={(e) => tagMenuFor(tag, e)}
+          onContextMenu={(e) => tagMenuFor(tag, e)}
+          title={registry.includes(tag) ? 'In registry' : 'Used on tasks but not in registry'}
+        >
+          {tag} <span className="lb-count">{tagCounts.get(tag) ?? 0}</span>
+        </span>
+      ))}
+      <span
+        className="lb-tag lb-tag-add"
+        onClick={() =>
+          new TextPromptModal(app, { title: 'New tag', placeholder: 'e.g. bug, idea', slug: true }, (t) =>
+            void addTagToRegistry(app, t).then(refresh)
+          ).open()
+        }
+        title="Add tag to registry"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M5 12h14" />
+          <path d="M12 5v14" />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+// Simple overview: every space with its counts.
+function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+  const [tick, refresh] = useVaultTick(app);
+  const spaces = useMemo(() => loadSpaces(app), [app, tick]);
+  const projects = useMemo(() => loadProjects(app), [app, tick]);
+  const tasks = useMemo(() => loadTasks(app), [app, tick]);
+
+  const spaceRowMenu = (s: Space, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) => i.setTitle('Edit…').setIcon('pencil').onClick(() => new SpaceModal(app, s, refresh).open()));
+    menu.addItem((i) => i.setTitle('Open note').setIcon('file-text').onClick(() => void openFileReuse(app, s.file)));
+    menu.addItem((i) =>
+      i.setTitle('New project here…').setIcon('plus').onClick(() => new ProjectModal(app, null, refresh, s.slug).open())
     );
     menu.showAtMouseEvent(e.nativeEvent);
   };
@@ -2013,45 +2111,12 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                   </span>
                 </span>
                 <span className="lb-projdesc">{s.description}</span>
-                <span className="lb-projcount">{projs.length} proj</span>
-                <span className="lb-projcount">{open} open</span>
+                <span className="lb-projcount lb-projcount-wide">{projs.length} proj</span>
+                <span className="lb-projcount lb-projcount-wide">{open} open</span>
               </div>
             );
           })}
           {spaces.length === 0 && <div className="lb-empty">No spaces yet — create citadel and personal.</div>}
-
-          <div className="lb-space-group" style={{ marginTop: 24 }}>
-            <LucideIcon name="tag" />
-            Tags
-            <span className="lb-count">{allTags.length}</span>
-          </div>
-          <div className="lb-tag-cloud">
-            {allTags.map((tag) => (
-              <span
-                key={tag}
-                className={`lb-tag lb-tag-inspect${registry.includes(tag) ? '' : ' lb-tag-unregistered'}`}
-                onClick={(e) => tagMenuFor(tag, e)}
-                onContextMenu={(e) => tagMenuFor(tag, e)}
-                title={registry.includes(tag) ? 'In registry' : 'Used on tasks but not in registry'}
-              >
-                {tag} <span className="lb-count">{tagCounts.get(tag) ?? 0}</span>
-              </span>
-            ))}
-            <span
-              className="lb-tag lb-tag-add"
-              onClick={() =>
-                new TextPromptModal(app, { title: 'New tag', placeholder: 'e.g. bug, idea', slug: true }, (t) =>
-                  void addTagToRegistry(app, t).then(refresh)
-                ).open()
-              }
-              title="Add tag to registry"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M5 12h14" />
-                <path d="M12 5v14" />
-              </svg>
-            </span>
-          </div>
         </div>
       </div>
     </StrictMode>
@@ -2265,26 +2330,10 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
     );
   }
 
-  const taskRowMenu = (t: TaskItem, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const menu = new Menu();
-    menu.addItem((i) =>
-      i.setTitle('Edit…').setIcon('pencil').onClick(() => new TaskEditModal(app, t, lists).open())
-    );
-    menu.addSeparator();
-    menu.addItem((i) =>
-      i.setTitle('Delete').setIcon('trash').onClick(async () => {
-        await app.vault.trash(t.file, true);
-        refresh();
-      })
-    );
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
-
   const sections = COLUMNS.map((c) => ({ status: c, items: mine.filter((t) => t.status === c) })).filter(
     (s) => s.items.length > 0
   );
+  const projectInfos = loadProjectInfos(app);
 
   return (
     <StrictMode>
@@ -2371,29 +2420,15 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
                 <span className="lb-count">{s.items.length}</span>
               </div>
               {s.items.map((t) => (
-                <div
+                <TaskRow
                   key={t.path}
-                  className="lb-taskrow"
-                  onClick={() => void openFileReuse(app, t.file)}
-                  onContextMenu={(e) => taskRowMenu(t, e)}
-                >
-                  <span className="lb-id">{t.id}</span>
-                  <span className="lb-taskrow-title">{t.title}</span>
-                  {t.priority && (
-                    <span className={`lb-priority lb-priority-${t.priority.toLowerCase()}`}>
-                      {[1, 2, 3, 4].map((n) => (
-                        <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[t.priority!] ? ' lb-bar-on' : ''}`} />
-                      ))}
-                    </span>
-                  )}
-                  {t.size && <span className="lb-size">{t.size}</span>}
-                  {t.due && <span className="lb-due">{t.due}</span>}
-                  {t.assignee !== DEFAULT_ASSIGNEE && (
-                    <span className="lb-avatar" style={{ background: avatarColor(t.assignee) }}>
-                      {t.assignee.charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                </div>
+                  app={app}
+                  task={t}
+                  lists={lists}
+                  projects={projectInfos}
+                  showProject={false}
+                  refresh={refresh}
+                />
               ))}
             </div>
           ))}
@@ -2424,6 +2459,13 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [activeView, setActiveView] = useState('All');
   const [views, setViews] = useState<SavedView[]>(plugin.settings.views);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [mode, setModeState] = useState<'board' | 'list'>(plugin.settings.boardMode ?? 'board');
+  const setMode = (m: 'board' | 'list') => {
+    setModeState(m);
+    plugin.settings.boardMode = m;
+    void plugin.saveData(plugin.settings);
+  };
 
   const refresh = useCallback(() => setTick((n) => n + 1), []);
 
@@ -2596,11 +2638,39 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             <LucideIcon name="plus" />
             Filter{filtered ? ' •' : ''}
           </button>
+          <div className="lb-seg lb-mode-seg">
+            <button
+              className={mode === 'list' ? 'lb-seg-active' : ''}
+              onClick={() => setMode('list')}
+              title="List"
+            >
+              <LucideIcon name="list" />
+            </button>
+            <button
+              className={mode === 'board' ? 'lb-seg-active' : ''}
+              onClick={() => setMode('board')}
+              title="Board"
+            >
+              <LucideIcon name="kanban-square" />
+            </button>
+          </div>
+          <button
+            className={`lb-pill${tagsOpen ? ' lb-pill-active' : ''}`}
+            onClick={() => setTagsOpen((o) => !o)}
+          >
+            <LucideIcon name="tag" />
+            Tags
+          </button>
           <button className="lb-pill lb-display" onClick={displayMenu}>
             <LucideIcon name="sliders-horizontal" />
             Display
           </button>
         </div>
+        {tagsOpen && (
+          <div className="lb-tags-panel">
+            <TagCloud app={app} />
+          </div>
+        )}
         {filterOpen && (
           <div className="lb-filter-panel">
             {FILTER_FIELDS.map((f) => (
@@ -2640,23 +2710,56 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             </button>
           </div>
         )}
-        <div className="lb-board">
-          {columns.map((c) => (
-            <Column
-              key={c}
-              app={app}
-              status={c}
-              allProjects={allProjects}
-              allTags={allTags}
-              allAssignees={allAssignees}
-              projects={projectInfos}
-              refresh={refresh}
-              tasks={visible
-                .filter((t) => t.status === c)
-                .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id))}
-            />
-          ))}
-        </div>
+        {mode === 'board' ? (
+          <div className="lb-board">
+            {columns.map((c) => (
+              <Column
+                key={c}
+                app={app}
+                status={c}
+                allProjects={allProjects}
+                allTags={allTags}
+                allAssignees={allAssignees}
+                projects={projectInfos}
+                refresh={refresh}
+                tasks={visible
+                  .filter((t) => t.status === c)
+                  .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id))}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="lb-proj-body">
+            {columns
+              .map((c) => ({
+                status: c,
+                items: visible
+                  .filter((t) => t.status === c)
+                  .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id)),
+              }))
+              .filter((s) => s.items.length > 0)
+              .map((s) => (
+                <div key={s.status}>
+                  <div className="lb-section-title">
+                    <span className={`lb-dot lb-dot-${s.status}`} />
+                    {COLUMN_LABELS[s.status]}
+                    <span className="lb-count">{s.items.length}</span>
+                  </div>
+                  {s.items.map((t) => (
+                    <TaskRow
+                      key={t.path}
+                      app={app}
+                      task={t}
+                      lists={{ allProjects, allTags, allAssignees }}
+                      projects={projectInfos}
+                      showProject
+                      refresh={refresh}
+                    />
+                  ))}
+                </div>
+              ))}
+          </div>
+        )}
         {adding && (
           <QuickAdd
             app={app}
@@ -2679,9 +2782,15 @@ interface LinearBoardSettings {
   views: SavedView[];
   openOnLaunch: 'never' | 'mobile' | 'always';
   activeSpace: string; // '' = all spaces
+  boardMode: 'board' | 'list';
 }
 
-const DEFAULT_SETTINGS: LinearBoardSettings = { views: [], openOnLaunch: 'mobile', activeSpace: '' };
+const DEFAULT_SETTINGS: LinearBoardSettings = {
+  views: [],
+  openOnLaunch: 'mobile',
+  activeSpace: '',
+  boardMode: 'board',
+};
 
 class LinearBoardSettingTab extends PluginSettingTab {
   plugin: LinearBoardPlugin;
