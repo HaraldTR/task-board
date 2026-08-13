@@ -840,6 +840,10 @@
 }
 .lb-projcount-wide {
   width: 86px;
+  text-align: left; /* worded counts align their column start, not their end */
+}
+.lb-projname-col .lb-project {
+  max-width: 100%;
 }
 .lb-projcreated {
   width: 90px;
@@ -1210,11 +1214,12 @@
     height: 18px;
   }
 
-  /* list rows: no horizontal scroll — drop low-value columns, let name flex */
+  /* list rows: no horizontal scroll — drop low-value columns; name column is
+     fixed-width so every row's columns start at the same x (chip truncates) */
   .lb-projname-col {
-    width: auto;
+    width: 34vw;
     min-width: 0;
-    flex-shrink: 1;
+    flex-shrink: 0;
     overflow: hidden;
   }
   .lb-projdesc,
