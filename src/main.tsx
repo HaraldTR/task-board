@@ -1993,7 +1993,32 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
           {groupedProjects.map(({ label, color, items }) => (
             <div key={label ?? '(unspaced)'}>
               {label !== undefined && (
-                <div className="lb-space-group">
+                <div
+                  className="lb-space-group lb-space-group-clickable"
+                  onClick={() => {
+                    if (spaces.some((s) => s.slug === label)) plugin.setActiveSpace(label);
+                  }}
+                  onContextMenu={(e) => {
+                    const space = spaces.find((s) => s.slug === label);
+                    if (!space) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const menu = new Menu();
+                    menu.addItem((i) =>
+                      i.setTitle('Edit space…').setIcon('pencil').onClick(() => new SpaceModal(app, space, refresh).open())
+                    );
+                    menu.addItem((i) =>
+                      i.setTitle('Open space note').setIcon('file-text').onClick(() => void openFileReuse(app, space.file))
+                    );
+                    menu.addItem((i) =>
+                      i.setTitle('New project here…').setIcon('plus').onClick(() =>
+                        new ProjectModal(app, null, refresh, space.slug).open()
+                      )
+                    );
+                    menu.showAtMouseEvent(e.nativeEvent);
+                  }}
+                  title="Click to scope · right-click for actions"
+                >
                   <span className="lb-dot" style={{ background: color ?? 'var(--lb-gray)' }} />
                   {label}
                   <span className="lb-count">{items.length}</span>

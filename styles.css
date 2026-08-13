@@ -185,7 +185,15 @@
   font-weight: 600;
   color: var(--lb-text-muted);
   margin: 14px 0 2px;
-  padding: 0 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.lb-space-group-clickable {
+  cursor: pointer;
+}
+.lb-space-group-clickable:hover {
+  color: var(--lb-text);
+  background: var(--lb-hover);
 }
 
 /* segmented view switcher (Tasks | Projects) */
