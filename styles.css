@@ -163,6 +163,19 @@
   color: var(--lb-text);
 }
 
+.lb-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--lb-text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.lb-breadcrumb .lb-view-icon svg {
+  width: 14px;
+  height: 14px;
+  color: var(--lb-text-faint);
+}
+
 /* display-options button: right end of the views row */
 .lb-display {
   margin-left: auto;

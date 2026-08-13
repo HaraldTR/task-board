@@ -1763,6 +1763,22 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
   return (
     <StrictMode>
       <div className="lb-root">
+        <div className="lb-header lb-header-top">
+          <div className="lb-seg">
+            <button onClick={() => void plugin.activateView()}>
+              <LucideIcon name="kanban-square" />
+              Tasks
+            </button>
+            <button className="lb-seg-active" onClick={() => void plugin.openProjectsView()} title="All projects">
+              <LucideIcon name="package" />
+              Projects
+            </button>
+          </div>
+          <span className="lb-breadcrumb">
+            <LucideIcon name="chevron-right" />
+            {slug}
+          </span>
+        </div>
         <div className="lb-proj-head">
           <div className="lb-proj-title-row">
             <ProjectChip project={project} size="lg" />
