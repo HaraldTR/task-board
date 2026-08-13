@@ -1392,13 +1392,14 @@ function Card({
     >
       <div className="lb-card-top">
         <span className="lb-id">{task.id}</span>
-        <span
-          className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
-          style={
-            task.project && projects.get(task.project)?.color
-              ? ({ '--proj-color': projects.get(task.project)!.color } as React.CSSProperties)
-              : undefined
+        <EntityChip
+          icon={task.project ? projects.get(task.project)?.icon : null}
+          color={
+            task.project
+              ? projects.get(task.project)?.color ?? 'var(--lb-indigo)'
+              : 'var(--lb-orange)'
           }
+          label={task.project ?? 'no project'}
           onClick={(e) =>
             projectMenu(app, allProjects, task.project, async (p) => {
               await setProp(app, task, 'project', p);
@@ -1406,12 +1407,7 @@ function Card({
             }, e)
           }
           title="Set project"
-        >
-          {task.project && projects.get(task.project)?.icon && (
-            <LucideIcon name={projects.get(task.project)!.icon!} />
-          )}
-          <span className="lb-project-name">{task.project ?? 'no project'}</span>
-        </span>
+        />
         {task.origin === 'ai' && (
           <span className="lb-origin-ai" title="Created by AI">
             ai
@@ -1461,20 +1457,18 @@ function Card({
         {task.tags.map((tag) => {
           const def = tagDefs.get(tag);
           return (
-            <span
+            <EntityChip
               key={tag}
-              className="lb-tag"
-              style={def?.color ? ({ '--tag-color': def.color } as React.CSSProperties) : undefined}
+              icon={def?.icon}
+              color={def?.color}
+              label={tag}
               onClick={(e) =>
                 tagsMenu(app, allTags, task.tags, async (tags) => {
                   await setTags(app, task, tags);
                   refresh();
                 }, e)
               }
-            >
-              {def?.icon && <LucideIcon name={def.icon} />}
-              {tag}
-            </span>
+            />
           );
         })}
         <span
@@ -1873,15 +1867,50 @@ function pickerLists(app: App, tasks: TaskItem[]): PickerLists {
   };
 }
 
-function ProjectChip({ project, size }: { project: Project; size?: 'lg' }) {
+// The one chip for spaces, projects, and tags: colored border + wash + icon.
+function EntityChip({
+  icon,
+  color,
+  label,
+  size,
+  dashed,
+  onClick,
+  title,
+  children,
+}: {
+  icon?: string | null;
+  color?: string | null;
+  label: string;
+  size?: 'row' | 'lg';
+  dashed?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
+  title?: string;
+  children?: React.ReactNode;
+}) {
   return (
     <span
-      className={`lb-project${size === 'lg' ? ' lb-project-lg' : ''}`}
-      style={project.color ? ({ '--proj-color': project.color } as React.CSSProperties) : undefined}
+      className={`lb-chip${size === 'lg' ? ' lb-chip-lg' : ''}${size === 'row' ? ' lb-chip-row' : ''}${
+        onClick ? ' lb-chip-click' : ''
+      }${dashed ? ' lb-chip-dashed' : ''}`}
+      style={color ? ({ '--chip-color': color } as React.CSSProperties) : undefined}
+      onClick={onClick}
+      title={title}
     >
-      {project.icon && <LucideIcon name={project.icon} />}
-      <span className="lb-project-name">{project.slug}</span>
+      {icon && <LucideIcon name={icon} />}
+      <span className="lb-chip-name">{label}</span>
+      {children}
     </span>
+  );
+}
+
+function ProjectChip({ project, size }: { project: Project; size?: 'lg' }) {
+  return (
+    <EntityChip
+      icon={project.icon}
+      color={project.color ?? 'var(--lb-indigo)'}
+      label={project.slug}
+      size={size === 'lg' ? 'lg' : 'row'}
+    />
   );
 }
 
@@ -1967,9 +1996,10 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
       </span>
       </div>
       <div className="lb-header">
-      <span
-        className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
-        style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+      <EntityChip
+        icon={proj?.icon}
+        color={task.project ? proj?.color ?? 'var(--lb-indigo)' : 'var(--lb-orange)'}
+        label={task.project ?? 'no project'}
         onClick={(e) =>
           projectMenu(app, lists.allProjects, task.project, async (p) => {
             await setProp(app, task, 'project', p);
@@ -1978,10 +2008,8 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         }
         title="Change project"
       >
-        {proj?.icon && <LucideIcon name={proj.icon} />}
-        <span className="lb-project-name">{task.project ?? 'no project'}</span>
         <span className="lb-chev">▾</span>
-      </span>
+      </EntityChip>
       <button className="lb-pill" onClick={statusMenu} title="Status">
         <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
         <span className="lb-chev">▾</span>
@@ -2011,17 +2039,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
       </span>
       {task.tags.map((tag) => {
         const def = loadTagRegistry(app).find((d) => d.name === tag);
-        return (
-          <span
-            key={tag}
-            className="lb-tag"
-            style={def?.color ? ({ '--tag-color': def.color } as React.CSSProperties) : undefined}
-            onClick={changeTags}
-          >
-            {def?.icon && <LucideIcon name={def.icon} />}
-            {tag}
-          </span>
-        );
+        return <EntityChip key={tag} icon={def?.icon} color={def?.color} label={tag} onClick={changeTags} />;
       })}
       <span className="lb-tag lb-tag-add" onClick={changeTags} title="Add tag">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -2108,13 +2126,7 @@ function TaskRow({
     <div className="lb-taskrow" onClick={() => void openFileReuse(app, task.file)} onContextMenu={menu}>
       <span className="lb-id">{task.id}</span>
       {showProject && task.project && (
-        <span
-          className="lb-project"
-          style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
-        >
-          {proj?.icon && <LucideIcon name={proj.icon} />}
-          <span className="lb-project-name">{task.project}</span>
-        </span>
+        <EntityChip icon={proj?.icon} color={proj?.color ?? 'var(--lb-indigo)'} label={task.project} />
       )}
       <span className="lb-taskrow-title">{task.title}</span>
       {task.priority && (
@@ -2279,13 +2291,7 @@ function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                 title="Click to edit · right-click for actions"
               >
                 <span className="lb-projname-col">
-                  <span
-                    className="lb-tag lb-tag-inspect"
-                    style={def?.color ? ({ '--tag-color': def.color } as React.CSSProperties) : undefined}
-                  >
-                    {def?.icon && <LucideIcon name={def.icon} />}
-                    {tag}
-                  </span>
+                  <EntityChip icon={def?.icon} color={def?.color} label={tag} size="row" dashed={!def} />
                 </span>
                 <span className="lb-projdesc">
                   {def ? '' : 'Used on tasks but not in the registry'}
@@ -2354,13 +2360,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                 title="Click to open projects in this space · right-click for actions"
               >
                 <span className="lb-projname-col">
-                  <span
-                    className="lb-project"
-                    style={s.color ? ({ '--proj-color': s.color } as React.CSSProperties) : undefined}
-                  >
-                    {s.icon && <LucideIcon name={s.icon} />}
-                    <span className="lb-project-name">{s.slug}</span>
-                  </span>
+                  <EntityChip icon={s.icon} color={s.color} label={s.slug} size="row" />
                 </span>
                 <span className="lb-projdesc">{s.description}</span>
                 <span className="lb-projcount lb-projcount-wide">{projs.length} project{projs.length === 1 ? '' : 's'}</span>

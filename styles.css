@@ -561,6 +561,65 @@
   height: 12px;
   display: block;
 }
+/* unified entity chip: spaces, projects, tags */
+.lb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--lb-control-font);
+  font-weight: 400;
+  line-height: var(--lb-control-h);
+  padding: 0 6px;
+  border-radius: var(--lb-control-radius);
+  border: 1px solid color-mix(in srgb, var(--chip-color, var(--lb-border)) 50%, var(--lb-border));
+  background: color-mix(in srgb, var(--chip-color, transparent) 10%, transparent);
+  color: var(--chip-color, var(--lb-text-muted));
+  max-width: 140px;
+}
+.lb-chip-click {
+  cursor: pointer;
+}
+.lb-chip-click:hover {
+  border-color: var(--chip-color, var(--lb-border-hover));
+  background: color-mix(in srgb, var(--chip-color, var(--lb-gray)) 18%, transparent);
+}
+.lb-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-chip .lb-view-icon svg {
+  width: 13px;
+  height: 13px;
+}
+.lb-chip-row {
+  font-size: var(--font-ui-small);
+  line-height: 20px;
+  padding: 1px 8px;
+}
+.lb-chip-row .lb-view-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.lb-chip-lg {
+  font-size: var(--font-ui-large);
+  font-weight: 600;
+  line-height: 26px;
+  padding: 2px 12px;
+  border-radius: 8px;
+  max-width: none;
+}
+.lb-chip-lg .lb-view-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.lb-chip-dashed {
+  border-style: dashed;
+}
+.lb-projname-col .lb-chip {
+  max-width: 100%;
+}
+
 .lb-fade-in {
   opacity: 0;
   transition: opacity 0.1s;
@@ -1141,6 +1200,15 @@
     font-size: 12px;
     line-height: 22px;
     padding: 0 8px;
+  }
+  .lb-chip {
+    font-size: 13px;
+    line-height: 22px;
+    padding: 0 8px;
+  }
+  .lb-chip .lb-view-icon svg {
+    width: 16px;
+    height: 16px;
   }
   .lb-project {
     font-size: 13px;
