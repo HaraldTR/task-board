@@ -3045,31 +3045,38 @@ class TaskBoardSettingTab extends PluginSettingTab {
   }
 }
 
+interface ViewSpec {
+  type: string;
+  title: string;
+  icon: string;
+  render: (view: ReactItemView) => React.ReactNode;
+}
+
 // Every list-style view is the same shell: a React root inside .lb-view.
-// The registry below declares type/title/icon/component once per view.
-class ReactItemView extends ItemView {
+// The spec is exposed via a prototype method (not a constructor field)
+// because Obsidian's ItemView constructor calls getViewType() during super(),
+// before instance fields exist.
+abstract class ReactItemView extends ItemView {
   root: Root | null = null;
 
-  constructor(
-    leaf: WorkspaceLeaf,
-    protected plugin: TaskBoardPlugin,
-    private spec: { type: string; title: string; icon: string; render: (view: ReactItemView) => React.ReactNode }
-  ) {
+  constructor(leaf: WorkspaceLeaf, protected plugin: TaskBoardPlugin) {
     super(leaf);
   }
 
+  protected abstract spec(): ViewSpec;
+
   getViewType() {
-    return this.spec.type;
+    return this.spec().type;
   }
   getDisplayText() {
-    return this.spec.title;
+    return this.spec().title;
   }
   getIcon() {
-    return this.spec.icon;
+    return this.spec().icon;
   }
 
   renderApp() {
-    this.root?.render(this.spec.render(this));
+    this.root?.render(this.spec().render(this));
   }
 
   async onOpen() {
@@ -3100,15 +3107,13 @@ const LIST_VIEWS: {
 class ProjectDetailView extends ReactItemView {
   slug = '';
 
-  constructor(leaf: WorkspaceLeaf, plugin: TaskBoardPlugin) {
-    super(leaf, plugin, {
+  protected spec(): ViewSpec {
+    return {
       type: PROJECT_VIEW_TYPE,
       title: 'Project',
       icon: 'package',
-      render: (view) => (
-        <ProjectApp app={view.app} plugin={plugin} slug={(view as ProjectDetailView).slug} />
-      ),
-    });
+      render: () => <ProjectApp app={this.app} plugin={this.plugin} slug={this.slug} />,
+    };
   }
 
   getDisplayText() {
@@ -3133,14 +3138,22 @@ export default class TaskBoardPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     applyConfig(this.settings);
 
-    for (const spec of LIST_VIEWS) {
-      const Component = spec.component;
-      this.registerView(spec.type, (leaf) =>
-        new ReactItemView(leaf, this, {
-          ...spec,
-          render: (view) => <Component app={view.app} plugin={this} />,
-        })
-      );
+    for (const entry of LIST_VIEWS) {
+      const Component = entry.component;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const plugin = this;
+      const viewSpec: ViewSpec = {
+        type: entry.type,
+        title: entry.title,
+        icon: entry.icon,
+        render: (view) => <Component app={view.app} plugin={plugin} />,
+      };
+      class ListView extends ReactItemView {
+        protected spec() {
+          return viewSpec;
+        }
+      }
+      this.registerView(entry.type, (leaf) => new ListView(leaf, plugin));
     }
     this.registerView(PROJECT_VIEW_TYPE, (leaf) => new ProjectDetailView(leaf, this));
     this.addSettingTab(new TaskBoardSettingTab(this.app, this));
