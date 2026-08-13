@@ -65,6 +65,7 @@ interface TaskItem {
   tags: string[];
   size: string | null;
   due: string | null;
+  created: string | null;
   started: string | null;
   completed: string | null;
   assignee: string;
@@ -188,6 +189,7 @@ function loadTasks(app: App): TaskItem[] {
           ? fm.size.toUpperCase()
           : null,
       due: fm.due ? String(fm.due) : null,
+      created: fm.created ? String(fm.created) : null,
       started: fm.started ? String(fm.started) : null,
       completed: fm.completed ? String(fm.completed) : null,
       assignee:
@@ -1003,6 +1005,38 @@ class ProjectModal extends Modal {
     new Notice(this.existing ? `${slug} updated` : `Project ${slug} created`);
     this.onDone(slug);
     this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class DueDateModal extends Modal {
+  constructor(app: App, private task: TaskItem, private onDone: () => void) {
+    super(app);
+  }
+
+  onOpen() {
+    this.modalEl.addClass('lb-edit-modal');
+    this.titleEl.setText(`Due date (${this.task.id})`);
+    const row = this.contentEl.createDiv({ cls: 'lb-edit-due' });
+    row.createSpan({ text: 'Due' });
+    const input = row.createEl('input', { type: 'date' });
+    input.value = this.task.due ?? '';
+    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const clear = actions.createEl('button', { text: 'Clear' });
+    clear.addEventListener('click', async () => {
+      await setProp(this.app, this.task, 'due', null);
+      this.onDone();
+      this.close();
+    });
+    const save = actions.createEl('button', { text: 'Save', cls: 'mod-cta' });
+    save.addEventListener('click', async () => {
+      await setProp(this.app, this.task, 'due', input.value || null);
+      this.onDone();
+      this.close();
+    });
   }
 
   onClose() {
@@ -1922,11 +1956,6 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         <LucideIcon name="chevron-right" />
         {task.id}
       </span>
-      <span className="lb-banner-spacer" />
-      <button className="lb-pill" onClick={() => new TaskEditModal(app, task, lists).open()}>
-        <LucideIcon name="pencil" />
-        Edit
-      </button>
       </div>
       <div className="lb-banner-row">
       <span
@@ -2001,7 +2030,30 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
       >
         @{task.assignee}
       </button>
-      {task.due && <span className="lb-due">Due {task.due}</span>}
+      <button
+        className="lb-pill"
+        onClick={() => new DueDateModal(app, task, refresh).open()}
+        title="Set due date"
+      >
+        <LucideIcon name="calendar" />
+        {task.due ? `Due ${task.due}` : 'Due'}
+      </button>
+      <span className="lb-banner-spacer" />
+      {task.created && (
+        <span className="lb-date-ro" title="Created — set automatically">
+          Created {task.created}
+        </span>
+      )}
+      {task.started && (
+        <span className="lb-date-ro" title="Started — stamped on first move to Today">
+          Started {task.started}
+        </span>
+      )}
+      {task.completed && (
+        <span className="lb-date-ro" title="Completed — stamped when moved to Done">
+          Done {task.completed}
+        </span>
+      )}
       </div>
     </>
   );

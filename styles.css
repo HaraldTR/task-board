@@ -121,6 +121,12 @@
 .lb-banner-spacer {
   margin-left: auto;
 }
+/* system-stamped dates: visible, not editable from the banner */
+.lb-date-ro {
+  color: var(--lb-text-faint);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
 .lb-goto-project {
   padding: 0 5px;
   margin-left: -3px;
