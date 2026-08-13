@@ -1233,6 +1233,6 @@
   /* task-note banner: clear Obsidian mobile's floating view buttons
      (sidebar toggle + view actions overlay the top of the content area) */
   .lb-note-banner {
-    padding-top: 116px;
+    padding-top: 115px;
   }
 }
