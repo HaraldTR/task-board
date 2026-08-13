@@ -256,7 +256,7 @@ async function ensureFolder(app: App, path: string) {
 }
 
 function taskFolderFor(status: string): string {
-  return CLOSED.includes(status) || status === DELETED_STATUS ? TASKS_INACTIVE : TASKS_ACTIVE;
+  return isArchivedStatus(status) ? TASKS_INACTIVE : TASKS_ACTIVE;
 }
 
 const softDeleteTask = (app: App, task: TaskItem) => moveTask(app, task, DELETED_STATUS);
@@ -690,6 +690,14 @@ function priorityRank(p: string | null): number {
   return p ? PRIORITIES.indexOf(p as (typeof PRIORITIES)[number]) : PRIORITIES.length;
 }
 
+// Canonical in-lane ordering: priority first, then stable by id.
+function byPriorityThenId(a: TaskItem, b: TaskItem): number {
+  return priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id);
+}
+
+const isClosedStatus = (status: string) => CLOSED.includes(status);
+const isArchivedStatus = (status: string) => isClosedStatus(status) || status === DELETED_STATUS;
+
 const AVATAR_COLORS = ['--lb-indigo', '--lb-blue', '--lb-orange', '--lb-red', '--lb-yellow', '--lb-gray'];
 
 function avatarColor(name: string): string {
@@ -706,7 +714,84 @@ type ClickEvt = { stopPropagation: () => void; nativeEvent: MouseEvent };
 
 const domEvt = (evt: MouseEvent): ClickEvt => ({ stopPropagation: () => {}, nativeEvent: evt });
 
-class TextPromptModal extends Modal {
+// Shared plumbing for every dialog: text inputs, icon grids, color swatches,
+// and the CTA row, so each modal only declares its fields and save logic.
+class FormModal extends Modal {
+  onClose() {
+    this.contentEl.empty();
+  }
+
+  protected addTextInput(opts: {
+    placeholder: string;
+    value?: string;
+    onInput?: (v: string) => void;
+    onEnter?: () => void;
+    selectInitial?: boolean;
+    focus?: boolean;
+  }) {
+    const input = this.contentEl.createEl('input', { type: 'text', placeholder: opts.placeholder });
+    input.style.width = '100%';
+    if (opts.value) {
+      input.value = opts.value;
+      if (opts.selectInitial) window.setTimeout(() => input.select(), 10);
+    }
+    if (opts.onInput) input.addEventListener('input', () => opts.onInput!(input.value));
+    if (opts.onEnter) {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') opts.onEnter!();
+      });
+    }
+    if (opts.focus) window.setTimeout(() => input.focus(), 10);
+    return input;
+  }
+
+  protected addIconGrid(icons: string[], get: () => string | null, set: (v: string | null) => void) {
+    const row = this.contentEl.createDiv({ cls: 'lb-icon-row' });
+    const buttons = new Map<string, HTMLElement>();
+    const paint = () => {
+      for (const [ic, el] of buttons) el.toggleClass('lb-icon-selected', get() === ic);
+    };
+    for (const ic of icons) {
+      const b = row.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
+      setIcon(b, ic);
+      b.addEventListener('click', () => {
+        set(get() === ic ? null : ic);
+        paint();
+      });
+      buttons.set(ic, b);
+    }
+    paint();
+  }
+
+  protected addSwatchRow(get: () => string | null, set: (v: string | null) => void, onChange?: () => void) {
+    const row = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
+    const paint = () => {
+      for (const el of Array.from(row.children)) {
+        (el as HTMLElement).toggleClass('lb-swatch-selected', el.getAttribute('aria-label') === get());
+      }
+      onChange?.();
+    };
+    for (const c of PROJECT_COLORS) {
+      const b = row.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
+      b.style.background = c;
+      b.addEventListener('click', () => {
+        set(get() === c ? null : c);
+        paint();
+      });
+    }
+    paint();
+    return { row, paint };
+  }
+
+  protected addCta(text: string, onClick: () => void) {
+    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const btn = row.createEl('button', { text, cls: 'mod-cta' });
+    btn.addEventListener('click', onClick);
+    return row;
+  }
+}
+
+class TextPromptModal extends FormModal {
   constructor(
     app: App,
     private opts: { title: string; placeholder: string; slug?: boolean; initial?: string; cta?: string },
@@ -717,36 +802,24 @@ class TextPromptModal extends Modal {
 
   onOpen() {
     this.titleEl.setText(this.opts.title);
-    const input = this.contentEl.createEl('input', {
-      type: 'text',
-      placeholder: this.opts.placeholder,
-    });
-    input.style.width = '100%';
-    if (this.opts.initial) {
-      input.value = this.opts.initial;
-      window.setTimeout(() => input.select(), 10);
-    }
     const submit = () => {
       let v = input.value.trim();
       if (this.opts.slug) v = v.toLowerCase().replace(/\s+/g, '-');
       if (v) this.onSubmit(v);
       this.close();
     };
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') submit();
+    const input = this.addTextInput({
+      placeholder: this.opts.placeholder,
+      value: this.opts.initial,
+      selectInitial: true,
+      focus: true,
+      onEnter: () => submit(),
     });
-    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const btn = row.createEl('button', { text: this.opts.cta ?? 'Add', cls: 'mod-cta' });
-    btn.addEventListener('click', submit);
-    window.setTimeout(() => input.focus(), 10);
-  }
-
-  onClose() {
-    this.contentEl.empty();
+    this.addCta(this.opts.cta ?? 'Add', submit);
   }
 }
 
-class SaveViewModal extends Modal {
+class SaveViewModal extends FormModal {
   private icon: string | null;
 
   constructor(
@@ -760,42 +833,19 @@ class SaveViewModal extends Modal {
 
   onOpen() {
     this.titleEl.setText(this.opts.title);
-    const input = this.contentEl.createEl('input', { type: 'text', placeholder: 'View name…' });
-    input.style.width = '100%';
-    if (this.opts.initialName) input.value = this.opts.initialName;
-
-    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
-    const buttons = new Map<string, HTMLElement>();
-    const paint = () => {
-      for (const [ic, el] of buttons) el.toggleClass('lb-icon-selected', this.icon === ic);
-    };
-    for (const ic of VIEW_ICONS) {
-      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
-      setIcon(b, ic);
-      b.addEventListener('click', () => {
-        this.icon = this.icon === ic ? null : ic;
-        paint();
-      });
-      buttons.set(ic, b);
-    }
-    paint();
-
     const submit = () => {
       const v = input.value.trim();
       if (v) this.onSubmit(v, this.icon);
       this.close();
     };
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') submit();
+    const input = this.addTextInput({
+      placeholder: 'View name…',
+      value: this.opts.initialName,
+      focus: true,
+      onEnter: () => submit(),
     });
-    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const btn = row.createEl('button', { text: 'Save', cls: 'mod-cta' });
-    btn.addEventListener('click', submit);
-    window.setTimeout(() => input.focus(), 10);
-  }
-
-  onClose() {
-    this.contentEl.empty();
+    this.addIconGrid(VIEW_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addCta('Save', submit);
   }
 }
 
@@ -805,7 +855,7 @@ function slugify(v: string): string {
 
 // Create/edit a space: typed note in pm/spaces/ plus (on create) its project
 // folder and catch-all project.
-class SpaceModal extends Modal {
+class SpaceModal extends FormModal {
   private name: string;
   private description: string;
   private icon: string | null;
@@ -822,51 +872,20 @@ class SpaceModal extends Modal {
   onOpen() {
     this.modalEl.addClass('lb-edit-modal');
     this.titleEl.setText(this.existing ? `Edit space: ${this.existing.slug}` : 'New space');
-
-    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Space name (e.g. work, personal)…' });
-    name.style.width = '100%';
-    name.value = this.name;
-    name.addEventListener('input', () => (this.name = name.value));
-
+    this.addTextInput({
+      placeholder: 'Space name (e.g. work, personal)…',
+      value: this.name,
+      onInput: (v) => (this.name = v),
+    });
     const desc = this.contentEl.createEl('textarea', {
       cls: 'lb-proj-desc-input',
       attr: { placeholder: 'One-line description…', rows: '2' },
     });
     desc.value = this.description;
     desc.addEventListener('input', () => (this.description = desc.value));
-
-    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
-    const iconBtns = new Map<string, HTMLElement>();
-    const paintIcons = () => {
-      for (const [ic, el] of iconBtns) el.toggleClass('lb-icon-selected', this.icon === ic);
-    };
-    for (const ic of PROJECT_ICONS) {
-      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
-      setIcon(b, ic);
-      b.addEventListener('click', () => {
-        this.icon = this.icon === ic ? null : ic;
-        paintIcons();
-      });
-      iconBtns.set(ic, b);
-    }
-    paintIcons();
-
-    const swatchRow = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
-    const swatches = new Map<string, HTMLElement>();
-    for (const c of PROJECT_COLORS) {
-      const b = swatchRow.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
-      b.style.background = c;
-      b.addEventListener('click', () => {
-        this.color = this.color === c ? null : c;
-        for (const [cc, el] of swatches) el.toggleClass('lb-swatch-selected', this.color === cc);
-      });
-      swatches.set(c, b);
-      b.toggleClass('lb-swatch-selected', this.color === c);
-    }
-
-    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const save = actions.createEl('button', { text: this.existing ? 'Save' : 'Create space', cls: 'mod-cta' });
-    save.addEventListener('click', () => void this.save());
+    this.addIconGrid(PROJECT_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addSwatchRow(() => this.color, (v) => (this.color = v));
+    this.addCta(this.existing ? 'Save' : 'Create space', () => void this.save());
   }
 
   async save() {
@@ -890,15 +909,11 @@ class SpaceModal extends Modal {
     this.onDone();
     this.close();
   }
-
-  onClose() {
-    this.contentEl.empty();
-  }
 }
 
 // Create/edit a project through code so the folder + folder note structure is
 // always correct. Renaming re-points all tasks; changing space moves the folder.
-class ProjectModal extends Modal {
+class ProjectModal extends FormModal {
   private name: string;
   private description: string;
   private icon: string | null;
@@ -922,11 +937,11 @@ class ProjectModal extends Modal {
   onOpen() {
     this.modalEl.addClass('lb-edit-modal');
     this.titleEl.setText(this.existing ? `Edit project: ${this.existing.slug}` : 'New project');
-
-    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Project name (becomes folder slug)…' });
-    name.style.width = '100%';
-    name.value = this.name;
-    name.addEventListener('input', () => (this.name = name.value));
+    this.addTextInput({
+      placeholder: 'Project name (becomes folder slug)…',
+      value: this.name,
+      onInput: (v) => (this.name = v),
+    });
 
     const spaceRow = this.contentEl.createDiv({ cls: 'lb-modal-row' });
     const spacePill = spaceRow.createEl('button', { cls: 'lb-pill' });
@@ -958,49 +973,27 @@ class ProjectModal extends Modal {
     desc.value = this.description;
     desc.addEventListener('input', () => (this.description = desc.value));
 
-    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
-    const iconBtns = new Map<string, HTMLElement>();
-    const paintIcons = () => {
-      for (const [ic, el] of iconBtns) el.toggleClass('lb-icon-selected', this.icon === ic);
-    };
-    for (const ic of PROJECT_ICONS) {
-      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
-      setIcon(b, ic);
-      b.addEventListener('click', () => {
-        this.icon = this.icon === ic ? null : ic;
-        paintIcons();
-      });
-      iconBtns.set(ic, b);
-    }
-    paintIcons();
+    this.addIconGrid(PROJECT_ICONS, () => this.icon, (v) => (this.icon = v));
 
-    const swatchRow = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
-    const swatches = new Map<string, HTMLElement>();
     const custom = createEl('input', { type: 'text', attr: { placeholder: '#hex' } });
-    const paintSwatches = () => {
-      for (const [c, el] of swatches) el.toggleClass('lb-swatch-selected', this.color === c);
-      if (custom.value !== (this.color ?? '')) custom.value = this.color ?? '';
-    };
-    for (const c of PROJECT_COLORS) {
-      const b = swatchRow.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
-      b.style.background = c;
-      b.addEventListener('click', () => {
-        this.color = this.color === c ? null : c;
-        paintSwatches();
-      });
-      swatches.set(c, b);
-    }
+    const { row: swatchRow, paint: paintSwatches } = this.addSwatchRow(
+      () => this.color,
+      (v) => (this.color = v),
+      () => {
+        if (custom.value !== (this.color ?? '')) custom.value = this.color ?? '';
+      }
+    );
     custom.addClass('lb-swatch-custom');
     swatchRow.appendChild(custom);
     custom.addEventListener('input', () => {
       this.color = custom.value.trim() || null;
-      for (const [c, el] of swatches) el.toggleClass('lb-swatch-selected', this.color === c);
+      for (const el of Array.from(swatchRow.children)) {
+        (el as HTMLElement).toggleClass('lb-swatch-selected', el.getAttribute('aria-label') === this.color);
+      }
     });
     paintSwatches();
 
-    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const save = actions.createEl('button', { text: this.existing ? 'Save' : 'Create project', cls: 'mod-cta' });
-    save.addEventListener('click', () => void this.save());
+    this.addCta(this.existing ? 'Save' : 'Create project', () => void this.save());
   }
 
   async save() {
@@ -1031,15 +1024,17 @@ class ProjectModal extends Modal {
     this.onDone(slug);
     this.close();
   }
-
-  onClose() {
-    this.contentEl.empty();
-  }
 }
 
-class DueDateModal extends Modal {
+class DueDateModal extends FormModal {
   constructor(app: App, private task: TaskItem, private onDone: () => void) {
     super(app);
+  }
+
+  private async apply(value: string | null) {
+    await setProp(this.app, this.task, 'due', value);
+    this.onDone();
+    this.close();
   }
 
   onOpen() {
@@ -1049,23 +1044,10 @@ class DueDateModal extends Modal {
     row.createSpan({ text: 'Due' });
     const input = row.createEl('input', { type: 'date' });
     input.value = this.task.due ?? '';
-    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const actions = this.addCta('Save', () => void this.apply(input.value || null));
     const clear = actions.createEl('button', { text: 'Clear' });
-    clear.addEventListener('click', async () => {
-      await setProp(this.app, this.task, 'due', null);
-      this.onDone();
-      this.close();
-    });
-    const save = actions.createEl('button', { text: 'Save', cls: 'mod-cta' });
-    save.addEventListener('click', async () => {
-      await setProp(this.app, this.task, 'due', input.value || null);
-      this.onDone();
-      this.close();
-    });
-  }
-
-  onClose() {
-    this.contentEl.empty();
+    clear.addEventListener('click', () => void this.apply(null));
+    actions.prepend(clear);
   }
 }
 
@@ -1077,7 +1059,7 @@ interface PickerLists {
 
 // Full task editor as a native Obsidian modal: works from the board, from a
 // command inside the note, and on mobile (renders as a bottom sheet there).
-class TaskEditModal extends Modal {
+class TaskEditModal extends FormModal {
   private title: string;
   private status: string;
   private priority: string | null;
@@ -1103,12 +1085,11 @@ class TaskEditModal extends Modal {
     this.modalEl.addClass('lb-edit-modal');
     this.titleEl.setText(`Edit ${this.task.id}`);
 
-    const input = this.contentEl.createEl('input', { type: 'text', placeholder: 'Task title…' });
-    input.style.width = '100%';
-    input.value = this.title;
-    input.addEventListener('input', () => (this.title = input.value));
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') void this.save();
+    this.addTextInput({
+      placeholder: 'Task title…',
+      value: this.title,
+      onInput: (v) => (this.title = v),
+      onEnter: () => void this.save(),
     });
 
     const row = this.contentEl.createDiv({ cls: 'lb-modal-row' });
@@ -1121,36 +1102,19 @@ class TaskEditModal extends Modal {
 
     pill(
       () => COLUMN_LABELS[this.status],
-      (evt, repaint) => {
-        const menu = new Menu();
-        for (const s of COLUMNS) {
-          menu.addItem((i) =>
-            i.setTitle(COLUMN_LABELS[s]).setChecked(this.status === s).onClick(() => {
-              this.status = s;
-              repaint();
-            })
-          );
-        }
-        menu.showAtMouseEvent(evt);
-      }
+      (evt, repaint) =>
+        statusPickMenu(this.status, (s) => {
+          this.status = s;
+          repaint();
+        }, domEvt(evt))
     );
     pill(
       () => (this.priority ? `${this.priority} · ${PRIORITY_LABELS[this.priority]}` : 'Priority'),
-      (evt, repaint) => {
-        const menu = new Menu();
-        for (const p of [...PRIORITIES, null]) {
-          menu.addItem((i) =>
-            i
-              .setTitle(p ? `${p} · ${PRIORITY_LABELS[p]}` : 'No priority')
-              .setChecked(this.priority === p)
-              .onClick(() => {
-                this.priority = p;
-                repaint();
-              })
-          );
-        }
-        menu.showAtMouseEvent(evt);
-      }
+      (evt, repaint) =>
+        priorityPickMenu(this.priority, (p) => {
+          this.priority = p;
+          repaint();
+        }, domEvt(evt))
     );
     pill(
       () => this.project ?? 'Project *',
@@ -1191,9 +1155,7 @@ class TaskEditModal extends Modal {
     due.value = this.due;
     due.addEventListener('input', () => (this.due = due.value));
 
-    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const save = actions.createEl('button', { text: 'Save', cls: 'mod-cta' });
-    save.addEventListener('click', () => void this.save());
+    this.addCta('Save', () => void this.save());
   }
 
   async save() {
@@ -1221,10 +1183,6 @@ class TaskEditModal extends Modal {
     }
     new Notice(`${t.id} updated`);
     this.close();
-  }
-
-  onClose() {
-    this.contentEl.empty();
   }
 }
 
@@ -1276,6 +1234,29 @@ function tagsMenu(
   menu.showAtMouseEvent(e.nativeEvent);
 }
 
+function statusPickMenu(current: string, onPick: (status: string) => void, e: ClickEvt) {
+  e.stopPropagation();
+  const menu = new Menu();
+  for (const st of COLUMNS) {
+    menu.addItem((i) => i.setTitle(COLUMN_LABELS[st]).setChecked(current === st).onClick(() => onPick(st)));
+  }
+  menu.showAtMouseEvent(e.nativeEvent);
+}
+
+function priorityPickMenu(current: string | null, onPick: (priority: string | null) => void, e: ClickEvt) {
+  e.stopPropagation();
+  const menu = new Menu();
+  for (const pr of [...PRIORITIES, null]) {
+    menu.addItem((i) =>
+      i
+        .setTitle(pr ? `${pr} · ${PRIORITY_LABELS[pr]}` : 'No priority')
+        .setChecked(current === pr)
+        .onClick(() => onPick(pr))
+    );
+  }
+  menu.showAtMouseEvent(e.nativeEvent);
+}
+
 function sizeMenu(current: string | null, onPick: (size: string | null) => void, e: ClickEvt) {
   e.stopPropagation();
   const menu = new Menu();
@@ -1310,6 +1291,12 @@ function assigneeMenu(
 
 /* ---------------- React UI ---------------- */
 
+// Typed helper for CSS custom properties in inline styles.
+function cssVars(vars: Record<string, string | undefined | null>): React.CSSProperties | undefined {
+  const entries = Object.entries(vars).filter(([, v]) => v != null);
+  return entries.length ? (Object.fromEntries(entries) as React.CSSProperties) : undefined;
+}
+
 function LucideIcon({ name }: { name: string }) {
   const ref = useCallback(
     (el: HTMLSpanElement | null) => {
@@ -1321,6 +1308,56 @@ function LucideIcon({ name }: { name: string }) {
     [name]
   );
   return <span className="lb-view-icon" ref={ref} />;
+}
+
+function PriorityBars({
+  priority,
+  onClick,
+  title,
+}: {
+  priority: string | null;
+  onClick?: (e: React.MouseEvent) => void;
+  title?: string;
+}) {
+  return (
+    <span
+      className={`lb-priority lb-priority-${(priority ?? 'none').toLowerCase()}`}
+      onClick={onClick}
+      title={title}
+    >
+      {priority
+        ? [1, 2, 3, 4].map((n) => (
+            <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[priority] ? ' lb-bar-on' : ''}`} />
+          ))
+        : [1, 2, 3].map((n) => <span key={n} className="lb-dash" />)}
+    </span>
+  );
+}
+
+function SizeBadge({
+  size,
+  fade,
+  onClick,
+  title,
+}: {
+  size: string | null;
+  fade?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
+  title?: string;
+}) {
+  return (
+    <span className={`lb-size${fade ? ' lb-fade-in' : ''}`} onClick={onClick} title={title}>
+      {size ?? '◇'}
+    </span>
+  );
+}
+
+function Avatar({ name, onClick, title }: { name: string; onClick?: (e: React.MouseEvent) => void; title?: string }) {
+  return (
+    <span className="lb-avatar" style={{ background: avatarColor(name) }} onClick={onClick} title={title}>
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
 }
 
 function Card({
@@ -1344,39 +1381,17 @@ function Card({
 }) {
   const openNote = () => void openFileReuse(app, task.file);
 
-  const priorityMenu = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const menu = new Menu();
-    for (const p of [...PRIORITIES, null]) {
-      menu.addItem((i) =>
-        i
-          .setTitle(p ? `${p} · ${PRIORITY_LABELS[p]}` : 'No priority')
-          .setChecked(task.priority === p)
-          .onClick(async () => {
-            await setProp(app, task, 'priority', p);
-            refresh();
-          })
-      );
-    }
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
+  const priorityMenu = (e: React.MouseEvent) =>
+    priorityPickMenu(task.priority, async (p) => {
+      await setProp(app, task, 'priority', p);
+      refresh();
+    }, e);
 
-  const statusMenu = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const menu = new Menu();
-    for (const s of COLUMNS) {
-      menu.addItem((i) =>
-        i
-          .setTitle(COLUMN_LABELS[s])
-          .setChecked(task.status === s)
-          .onClick(async () => {
-            await moveTask(app, task, s);
-            refresh();
-          })
-      );
-    }
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
+  const statusMenu = (e: React.MouseEvent) =>
+    statusPickMenu(task.status, async (s) => {
+      await moveTask(app, task, s);
+      refresh();
+    }, e);
 
   const contextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1430,9 +1445,8 @@ function Card({
           </span>
         )}
         {task.assignee !== DEFAULT_ASSIGNEE && (
-          <span
-            className="lb-avatar"
-            style={{ background: avatarColor(task.assignee) }}
+          <Avatar
+            name={task.assignee}
             onClick={(e) =>
               assigneeMenu(app, allAssignees, task.assignee, async (a) => {
                 await setProp(app, task, 'assignee', a);
@@ -1440,26 +1454,19 @@ function Card({
               }, e)
             }
             title={`Assignee: ${task.assignee}`}
-          >
-            {task.assignee.charAt(0).toUpperCase()}
-          </span>
+          />
         )}
       </div>
       <div className="lb-title">{task.title}</div>
       <div className="lb-meta">
-        <span
-          className={`lb-priority lb-priority-${(task.priority ?? 'none').toLowerCase()}`}
+        <PriorityBars
+          priority={task.priority}
           onClick={priorityMenu}
           title={task.priority ? `${task.priority} · ${PRIORITY_LABELS[task.priority]}` : 'Set priority'}
-        >
-          {task.priority
-            ? [1, 2, 3, 4].map((n) => (
-                <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[task.priority!] ? ' lb-bar-on' : ''}`} />
-              ))
-            : [1, 2, 3].map((n) => <span key={n} className="lb-dash" />)}
-        </span>
-        <span
-          className={`lb-size${task.size ? '' : ' lb-fade-in'}`}
+        />
+        <SizeBadge
+          size={task.size}
+          fade={!task.size}
           onClick={(e) =>
             sizeMenu(task.size, async (s) => {
               await setProp(app, task, 'size', s);
@@ -1467,9 +1474,7 @@ function Card({
             }, e)
           }
           title={task.size ? `Size: ${task.size}` : 'Set size'}
-        >
-          {task.size ?? '◇'}
-        </span>
+        />
         {task.tags.map((tag) => {
           const def = tagDefs.get(tag);
           return (
@@ -1641,28 +1646,8 @@ function QuickAdd({
     onClose();
   };
 
-  const statusPill = (e: React.MouseEvent) => {
-    const menu = new Menu();
-    for (const s of COLUMNS) {
-      menu.addItem((i) =>
-        i.setTitle(COLUMN_LABELS[s]).setChecked(status === s).onClick(() => setStatus(s))
-      );
-    }
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
-
-  const priorityPill = (e: React.MouseEvent) => {
-    const menu = new Menu();
-    for (const p of [...PRIORITIES, null]) {
-      menu.addItem((i) =>
-        i
-          .setTitle(p ? `${p} · ${PRIORITY_LABELS[p]}` : 'No priority')
-          .setChecked(priority === p)
-          .onClick(() => setPriority(p))
-      );
-    }
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
+  const statusPill = (e: React.MouseEvent) => statusPickMenu(status, setStatus, e);
+  const priorityPill = (e: React.MouseEvent) => priorityPickMenu(priority, setPriority, e);
 
   return (
     <div className="lb-overlay" onClick={onClose}>
@@ -1825,7 +1810,7 @@ function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: TaskBoardPlug
   return (
     <button
       className="lb-space-sw"
-      style={current?.color ? ({ '--space-color': current.color } as React.CSSProperties) : undefined}
+      style={cssVars({ '--space-color': current?.color })}
       onClick={openMenu}
       title="Switch space"
     >
@@ -1909,7 +1894,7 @@ function EntityChip({
       className={`lb-chip${size === 'lg' ? ' lb-chip-lg' : ''}${size === 'row' ? ' lb-chip-row' : ''}${
         onClick ? ' lb-chip-click' : ''
       }${dashed ? ' lb-chip-dashed' : ''}`}
-      style={color ? ({ '--chip-color': color } as React.CSSProperties) : undefined}
+      style={cssVars({ '--chip-color': color })}
       onClick={onClick}
       title={title}
     >
@@ -1937,39 +1922,23 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: TaskBoardPlugin; 
   const [tick, refresh] = useVaultTick(app);
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
   const projects = useMemo(() => loadProjectInfos(app), [app, tick]);
+  const tagDefs = useMemo(() => loadTagRegistry(app), [app, tick]);
   const lists = useMemo(() => pickerLists(app, tasks), [app, tasks]);
   const task = tasks.find((t) => t.path === file.path);
   if (!task) return null;
   const proj = task.project ? projects.get(task.project) : undefined;
 
-  const statusMenu = (e: React.MouseEvent) => {
-    const menu = new Menu();
-    for (const s of COLUMNS) {
-      menu.addItem((i) =>
-        i.setTitle(COLUMN_LABELS[s]).setChecked(task.status === s).onClick(async () => {
-          await moveTask(app, task, s);
-          refresh();
-        })
-      );
-    }
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
+  const statusMenu = (e: React.MouseEvent) =>
+    statusPickMenu(task.status, async (s) => {
+      await moveTask(app, task, s);
+      refresh();
+    }, e);
 
-  const priorityMenu = (e: React.MouseEvent) => {
-    const menu = new Menu();
-    for (const p of [...PRIORITIES, null]) {
-      menu.addItem((i) =>
-        i
-          .setTitle(p ? `${p} · ${PRIORITY_LABELS[p]}` : 'No priority')
-          .setChecked(task.priority === p)
-          .onClick(async () => {
-            await setProp(app, task, 'priority', p);
-            refresh();
-          })
-      );
-    }
-    menu.showAtMouseEvent(e.nativeEvent);
-  };
+  const priorityMenu = (e: React.MouseEvent) =>
+    priorityPickMenu(task.priority, async (p) => {
+      await setProp(app, task, 'priority', p);
+      refresh();
+    }, e);
 
   const changeTags = (e: React.MouseEvent) =>
     tagsMenu(app, lists.allTags, task.tags, async (tags) => {
@@ -1999,7 +1968,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: TaskBoardPlugin; 
             <LucideIcon name="chevron-right" />
             <span
               className="lb-crumb-space lb-crumb-proj"
-              style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+              style={cssVars({ '--proj-color': proj?.color })}
               onClick={() => void plugin.openProject(task.project!)}
               title={`Open project: ${task.project}`}
             >
@@ -2031,19 +2000,13 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: TaskBoardPlugin; 
         <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
         <span className="lb-chev">▾</span>
       </button>
-      <span
-        className={`lb-priority lb-priority-${(task.priority ?? 'none').toLowerCase()}`}
+      <PriorityBars
+        priority={task.priority}
         onClick={priorityMenu}
         title={task.priority ? `${task.priority} · ${PRIORITY_LABELS[task.priority]}` : 'Set priority'}
-      >
-        {task.priority
-          ? [1, 2, 3, 4].map((n) => (
-              <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[task.priority!] ? ' lb-bar-on' : ''}`} />
-            ))
-          : [1, 2, 3].map((n) => <span key={n} className="lb-dash" />)}
-      </span>
-      <span
-        className="lb-size"
+      />
+      <SizeBadge
+        size={task.size}
         onClick={(e) =>
           sizeMenu(task.size, async (s) => {
             await setProp(app, task, 'size', s);
@@ -2051,11 +2014,9 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: TaskBoardPlugin; 
           }, e)
         }
         title={task.size ? `Size: ${task.size}` : 'Set size'}
-      >
-        {task.size ?? '◇'}
-      </span>
+      />
       {task.tags.map((tag) => {
-        const def = loadTagRegistry(app).find((d) => d.name === tag);
+        const def = tagDefs.find((d) => d.name === tag);
         return <EntityChip key={tag} icon={def?.icon} color={def?.color} label={tag} onClick={changeTags} />;
       })}
       <span className="lb-tag lb-tag-add" onClick={changeTags} title="Add tag">
@@ -2146,26 +2107,16 @@ function TaskRow({
         <EntityChip icon={proj?.icon} color={proj?.color ?? 'var(--lb-indigo)'} label={task.project} />
       )}
       <span className="lb-taskrow-title">{task.title}</span>
-      {task.priority && (
-        <span className={`lb-priority lb-priority-${task.priority.toLowerCase()}`}>
-          {[1, 2, 3, 4].map((n) => (
-            <span key={n} className={`lb-bar${n <= PRIORITY_LEVEL[task.priority!] ? ' lb-bar-on' : ''}`} />
-          ))}
-        </span>
-      )}
-      {task.size && <span className="lb-size">{task.size}</span>}
+      {task.priority && <PriorityBars priority={task.priority} />}
+      {task.size && <SizeBadge size={task.size} />}
       {task.due && <span className="lb-due">{task.due}</span>}
-      {task.assignee !== DEFAULT_ASSIGNEE && (
-        <span className="lb-avatar" style={{ background: avatarColor(task.assignee) }}>
-          {task.assignee.charAt(0).toUpperCase()}
-        </span>
-      )}
+      {task.assignee !== DEFAULT_ASSIGNEE && <Avatar name={task.assignee} />}
     </div>
   );
 }
 
 // Edit a tag's name, icon, and color; renaming propagates to every task.
-class TagEditModal extends Modal {
+class TagEditModal extends FormModal {
   private name: string;
   private icon: string | null;
   private color: string | null;
@@ -2181,43 +2132,14 @@ class TagEditModal extends Modal {
     this.modalEl.addClass('lb-edit-modal');
     this.titleEl.setText(this.existing ? `Edit tag: ${this.existing.name}` : 'New tag');
 
-    const name = this.contentEl.createEl('input', { type: 'text', placeholder: 'Tag name (e.g. bug, idea)…' });
-    name.style.width = '100%';
-    name.value = this.name;
-    name.addEventListener('input', () => (this.name = name.value));
-
-    const iconRow = this.contentEl.createDiv({ cls: 'lb-icon-row' });
-    const iconBtns = new Map<string, HTMLElement>();
-    const paintIcons = () => {
-      for (const [ic, el] of iconBtns) el.toggleClass('lb-icon-selected', this.icon === ic);
-    };
-    for (const ic of PROJECT_ICONS) {
-      const b = iconRow.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
-      setIcon(b, ic);
-      b.addEventListener('click', () => {
-        this.icon = this.icon === ic ? null : ic;
-        paintIcons();
-      });
-      iconBtns.set(ic, b);
-    }
-    paintIcons();
-
-    const swatchRow = this.contentEl.createDiv({ cls: 'lb-swatch-row' });
-    for (const c of PROJECT_COLORS) {
-      const b = swatchRow.createEl('button', { cls: 'lb-swatch', attr: { 'aria-label': c } });
-      b.style.background = c;
-      b.toggleClass('lb-swatch-selected', this.color === c);
-      b.addEventListener('click', () => {
-        this.color = this.color === c ? null : c;
-        for (const el of Array.from(swatchRow.children)) {
-          (el as HTMLElement).toggleClass('lb-swatch-selected', el.getAttribute('aria-label') === this.color);
-        }
-      });
-    }
-
-    const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    const save = actions.createEl('button', { text: this.existing ? 'Save' : 'Create tag', cls: 'mod-cta' });
-    save.addEventListener('click', () => void this.save());
+    this.addTextInput({
+      placeholder: 'Tag name (e.g. bug, idea)…',
+      value: this.name,
+      onInput: (v) => (this.name = v),
+    });
+    this.addIconGrid(PROJECT_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addSwatchRow(() => this.color, (v) => (this.color = v));
+    this.addCta(this.existing ? 'Save' : 'Create tag', () => void this.save());
   }
 
   async save() {
@@ -2233,10 +2155,6 @@ class TagEditModal extends Modal {
     new Notice(this.existing ? `Tag ${tag} updated` : `Tag ${tag} created`);
     this.onDone();
     this.close();
-  }
-
-  onClose() {
-    this.contentEl.empty();
   }
 }
 
@@ -2363,7 +2281,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
           {spaces.map((s) => {
             const projs = projects.filter((p) => p.space === s.slug && p.status === 'active');
             const open = tasks.filter(
-              (t) => t.space === s.slug && !CLOSED.includes(t.status) && t.status !== DELETED_STATUS
+              (t) => t.space === s.slug && !isArchivedStatus(t.status)
             ).length;
             return (
               <div
@@ -2406,7 +2324,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const counts = (slug: string) => {
     const mine = tasks.filter((t) => t.project === slug && t.status !== DELETED_STATUS);
     const done = mine.filter((t) => t.status === 'done').length;
-    const open = mine.filter((t) => !CLOSED.includes(t.status)).length;
+    const open = mine.filter((t) => !isClosedStatus(t.status)).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
     return { open, done, pct };
   };
@@ -2587,7 +2505,7 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; 
   const lists = useMemo(() => pickerLists(app, allTasks), [app, allTasks]);
   const mine = allTasks
     .filter((t) => t.project === slug)
-    .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id));
+    .sort(byPriorityThenId);
 
   if (!slug || !project) {
     return (
@@ -2759,24 +2677,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
   // Canonical sources (project folders, tags.md) unioned with values in use,
   // so legacy values stay pickable/filterable.
-  const allProjects = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...listProjects(app),
-          ...tasks.map((t) => t.project).filter((p): p is string => !!p),
-        ]),
-      ].sort(),
-    [app, tick, tasks]
-  );
-  const allTags = useMemo(
-    () => [...new Set([...registryNames(app), ...tasks.flatMap((t) => t.tags)])].sort(),
-    [app, tick, tasks]
-  );
-  const allAssignees = useMemo(
-    () => [...new Set([DEFAULT_ASSIGNEE, ...tasks.map((t) => t.assignee)])].sort(),
-    [tasks]
-  );
+  const { allProjects, allTags, allAssignees } = useMemo(() => pickerLists(app, tasks), [app, tick, tasks]);
   const projectInfos = useMemo(() => loadProjectInfos(app), [app, tick]);
   const tagDefs = useMemo(
     () => new Map(loadTagRegistry(app).map((d) => [d.name, d] as const)),
@@ -2866,12 +2767,12 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const visible = tasks.filter(
     (t) => (!activeSpace || t.space === activeSpace) && matchesConditions(t, conditions)
   );
-  const columns = COLUMNS.filter((c) => showClosed || !CLOSED.includes(c));
+  const columns = COLUMNS.filter((c) => showClosed || !isClosedStatus(c));
   const filtered = hasConditions(conditions);
   const valueLabel = (field: FilterField, v: string) =>
     field === 'status' ? COLUMN_LABELS[v] ?? v : v;
 
-  const closedCount = visible.filter((t) => CLOSED.includes(t.status)).length;
+  const closedCount = visible.filter((t) => isClosedStatus(t.status)).length;
 
   return (
     <StrictMode>
@@ -2990,7 +2891,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
                 refresh={refresh}
                 tasks={visible
                   .filter((t) => t.status === c)
-                  .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id))}
+                  .sort(byPriorityThenId)}
               />
             ))}
           </div>
@@ -3001,7 +2902,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
                 status: c,
                 items: visible
                   .filter((t) => t.status === c)
-                  .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.id.localeCompare(b.id)),
+                  .sort(byPriorityThenId),
               }))
               .filter((s) => s.items.length > 0)
               .map((s) => (
@@ -3134,28 +3035,38 @@ class TaskBoardSettingTab extends PluginSettingTab {
   }
 }
 
-class TaskBoardView extends ItemView {
+// Every list-style view is the same shell: a React root inside .lb-view.
+// The registry below declares type/title/icon/component once per view.
+class ReactItemView extends ItemView {
   root: Root | null = null;
 
-  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
+  constructor(
+    leaf: WorkspaceLeaf,
+    protected plugin: TaskBoardPlugin,
+    private spec: { type: string; title: string; icon: string; render: (view: ReactItemView) => React.ReactNode }
+  ) {
     super(leaf);
   }
 
   getViewType() {
-    return VIEW_TYPE;
+    return this.spec.type;
   }
   getDisplayText() {
-    return 'Task board';
+    return this.spec.title;
   }
   getIcon() {
-    return 'kanban-square';
+    return this.spec.icon;
+  }
+
+  renderApp() {
+    this.root?.render(this.spec.render(this));
   }
 
   async onOpen() {
     this.contentEl.empty();
     this.contentEl.addClass('lb-view');
     this.root = createRoot(this.contentEl);
-    this.root.render(<BoardApp app={this.app} plugin={this.plugin} />);
+    this.renderApp();
   }
 
   async onClose() {
@@ -3164,112 +3075,34 @@ class TaskBoardView extends ItemView {
   }
 }
 
-class ProjectsListView extends ItemView {
-  root: Root | null = null;
+const LIST_VIEWS: {
+  type: string;
+  title: string;
+  icon: string;
+  component: React.ComponentType<{ app: App; plugin: TaskBoardPlugin }>;
+}[] = [
+  { type: SPACES_VIEW_TYPE, title: 'Spaces', icon: 'layers', component: SpacesApp },
+  { type: PROJECTS_VIEW_TYPE, title: 'Projects', icon: 'package', component: ProjectsApp },
+  { type: VIEW_TYPE, title: 'Task board', icon: 'kanban-square', component: BoardApp },
+  { type: TAGS_VIEW_TYPE, title: 'Tags', icon: 'tag', component: TagsApp },
+];
 
-  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
-    super(leaf);
-  }
-
-  getViewType() {
-    return PROJECTS_VIEW_TYPE;
-  }
-  getDisplayText() {
-    return 'Projects';
-  }
-  getIcon() {
-    return 'package';
-  }
-
-  async onOpen() {
-    this.contentEl.empty();
-    this.contentEl.addClass('lb-view');
-    this.root = createRoot(this.contentEl);
-    this.root.render(<ProjectsApp app={this.app} plugin={this.plugin} />);
-  }
-
-  async onClose() {
-    this.root?.unmount();
-    this.root = null;
-  }
-}
-
-class SpacesListView extends ItemView {
-  root: Root | null = null;
-
-  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
-    super(leaf);
-  }
-
-  getViewType() {
-    return SPACES_VIEW_TYPE;
-  }
-  getDisplayText() {
-    return 'Spaces';
-  }
-  getIcon() {
-    return 'layers';
-  }
-
-  async onOpen() {
-    this.contentEl.empty();
-    this.contentEl.addClass('lb-view');
-    this.root = createRoot(this.contentEl);
-    this.root.render(<SpacesApp app={this.app} plugin={this.plugin} />);
-  }
-
-  async onClose() {
-    this.root?.unmount();
-    this.root = null;
-  }
-}
-
-class TagsListView extends ItemView {
-  root: Root | null = null;
-
-  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
-    super(leaf);
-  }
-
-  getViewType() {
-    return TAGS_VIEW_TYPE;
-  }
-  getDisplayText() {
-    return 'Tags';
-  }
-  getIcon() {
-    return 'tag';
-  }
-
-  async onOpen() {
-    this.contentEl.empty();
-    this.contentEl.addClass('lb-view');
-    this.root = createRoot(this.contentEl);
-    this.root.render(<TagsApp app={this.app} plugin={this.plugin} />);
-  }
-
-  async onClose() {
-    this.root?.unmount();
-    this.root = null;
-  }
-}
-
-class ProjectDetailView extends ItemView {
-  root: Root | null = null;
+class ProjectDetailView extends ReactItemView {
   slug = '';
 
-  constructor(leaf: WorkspaceLeaf, private plugin: TaskBoardPlugin) {
-    super(leaf);
+  constructor(leaf: WorkspaceLeaf, plugin: TaskBoardPlugin) {
+    super(leaf, plugin, {
+      type: PROJECT_VIEW_TYPE,
+      title: 'Project',
+      icon: 'package',
+      render: (view) => (
+        <ProjectApp app={view.app} plugin={plugin} slug={(view as ProjectDetailView).slug} />
+      ),
+    });
   }
 
-  getViewType() {
-    return PROJECT_VIEW_TYPE;
-  }
   getDisplayText() {
     return this.slug || 'Project';
-  }
-  getIcon() {
-    return 'package';
   }
 
   async setState(state: unknown, result: ViewStateResult) {
@@ -3281,22 +3114,6 @@ class ProjectDetailView extends ItemView {
   getState() {
     return { slug: this.slug };
   }
-
-  renderApp() {
-    this.root?.render(<ProjectApp app={this.app} plugin={this.plugin} slug={this.slug} />);
-  }
-
-  async onOpen() {
-    this.contentEl.empty();
-    this.contentEl.addClass('lb-view');
-    this.root = createRoot(this.contentEl);
-    this.renderApp();
-  }
-
-  async onClose() {
-    this.root?.unmount();
-    this.root = null;
-  }
 }
 
 export default class TaskBoardPlugin extends Plugin {
@@ -3306,11 +3123,16 @@ export default class TaskBoardPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     applyConfig(this.settings);
 
-    this.registerView(VIEW_TYPE, (leaf) => new TaskBoardView(leaf, this));
-    this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsListView(leaf, this));
+    for (const spec of LIST_VIEWS) {
+      const Component = spec.component;
+      this.registerView(spec.type, (leaf) =>
+        new ReactItemView(leaf, this, {
+          ...spec,
+          render: (view) => <Component app={view.app} plugin={this} />,
+        })
+      );
+    }
     this.registerView(PROJECT_VIEW_TYPE, (leaf) => new ProjectDetailView(leaf, this));
-    this.registerView(SPACES_VIEW_TYPE, (leaf) => new SpacesListView(leaf, this));
-    this.registerView(TAGS_VIEW_TYPE, (leaf) => new TagsListView(leaf, this));
     this.addSettingTab(new TaskBoardSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
@@ -3334,29 +3156,15 @@ export default class TaskBoardPlugin extends Plugin {
     this.addRibbonIcon('kanban-square', 'Open task board', () => void this.activateView());
     this.addRibbonIcon('package', 'Open projects', () => void this.openProjectsView());
 
-    this.addCommand({
-      id: 'open-board',
-      name: 'Open task board',
-      callback: () => void this.activateView(),
-    });
-
-    this.addCommand({
-      id: 'open-projects',
-      name: 'Open projects',
-      callback: () => void this.openProjectsView(),
-    });
-
-    this.addCommand({
-      id: 'open-spaces',
-      name: 'Open spaces',
-      callback: () => void this.openSpacesView(),
-    });
-
-    this.addCommand({
-      id: 'open-tags',
-      name: 'Open tags',
-      callback: () => void this.openTagsView(),
-    });
+    const openCommands: [string, string, string][] = [
+      ['open-board', 'Open task board', VIEW_TYPE],
+      ['open-projects', 'Open projects', PROJECTS_VIEW_TYPE],
+      ['open-spaces', 'Open spaces', SPACES_VIEW_TYPE],
+      ['open-tags', 'Open tags', TAGS_VIEW_TYPE],
+    ];
+    for (const [id, name, type] of openCommands) {
+      this.addCommand({ id, name, callback: () => void this.revealView(type) });
+    }
 
     this.addCommand({
       id: 'edit-task',
@@ -3394,15 +3202,32 @@ export default class TaskBoardPlugin extends Plugin {
     (this.app.workspace as any).trigger('task-board:space-changed');
   }
 
-  async activateView() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
-    if (existing.length > 0) {
+  // Reveal the singleton leaf for a view type, creating it if needed.
+  async revealView(type: string, state?: Record<string, unknown>) {
+    const existing = this.app.workspace.getLeavesOfType(type);
+    if (existing.length > 0 && !state) {
       this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type: VIEW_TYPE, active: true });
+    await leaf.setViewState({ type, active: true, ...(state ? { state } : {}) });
     this.app.workspace.revealLeaf(leaf);
+  }
+
+  activateView() {
+    return this.revealView(VIEW_TYPE);
+  }
+
+  openProjectsView() {
+    return this.revealView(PROJECTS_VIEW_TYPE);
+  }
+
+  openSpacesView() {
+    return this.revealView(SPACES_VIEW_TYPE);
+  }
+
+  openTagsView() {
+    return this.revealView(TAGS_VIEW_TYPE);
   }
 
   private docking = false;
@@ -3490,39 +3315,6 @@ export default class TaskBoardPlugin extends Plugin {
       banner?.remove();
       content.removeClass('lb-task-note');
     }
-  }
-
-  async openProjectsView() {
-    const existing = this.app.workspace.getLeavesOfType(PROJECTS_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type: PROJECTS_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
-  }
-
-  async openSpacesView() {
-    const existing = this.app.workspace.getLeavesOfType(SPACES_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type: SPACES_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
-  }
-
-  async openTagsView() {
-    const existing = this.app.workspace.getLeavesOfType(TAGS_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type: TAGS_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
   }
 
   async openProject(slug: string) {
