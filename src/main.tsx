@@ -22,6 +22,7 @@ import { Root, createRoot } from 'react-dom/client';
 const VIEW_TYPE = 'linear-board-view';
 const PROJECTS_VIEW_TYPE = 'linear-projects-view';
 const PROJECT_VIEW_TYPE = 'linear-project-view';
+const SPACES_VIEW_TYPE = 'linear-spaces-view';
 const TASKS_FOLDER = 'pm/tasks';
 const TASKS_ACTIVE = 'pm/tasks/active';
 const TASKS_INACTIVE = 'pm/tasks/inactive';
@@ -509,6 +510,31 @@ function loadTagRegistry(app: App): string[] {
   const raw = app.metadataCache.getFileCache(f)?.frontmatter?.tags;
   const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
   return list.filter((t): t is string => typeof t === 'string' && !!t.trim()).map((t) => t.trim());
+}
+
+async function removeTagFromRegistry(app: App, tag: string) {
+  const f = app.vault.getAbstractFileByPath(TAGS_FILE);
+  if (!(f instanceof TFile)) return;
+  await app.fileManager.processFrontMatter(f, (fm) => {
+    fm.tags = (Array.isArray(fm.tags) ? fm.tags : []).filter((t: unknown) => t !== tag);
+  });
+}
+
+async function renameTagEverywhere(app: App, oldTag: string, newTag: string) {
+  await addTagToRegistry(app, newTag);
+  await removeTagFromRegistry(app, oldTag);
+  for (const t of loadTasks(app)) {
+    if (t.tags.includes(oldTag)) {
+      await setTags(app, t, [...new Set(t.tags.map((x) => (x === oldTag ? newTag : x)))]);
+    }
+  }
+}
+
+async function deleteTagEverywhere(app: App, tag: string) {
+  await removeTagFromRegistry(app, tag);
+  for (const t of loadTasks(app)) {
+    if (t.tags.includes(tag)) await setTags(app, t, t.tags.filter((x) => x !== tag));
+  }
 }
 
 async function addTagToRegistry(app: App, tag: string) {
@@ -1707,6 +1733,28 @@ function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: LinearBoardPl
   );
 }
 
+function NavSeg({ plugin, active }: { plugin: LinearBoardPlugin; active: 'spaces' | 'projects' | 'tasks' }) {
+  return (
+    <div className="lb-seg">
+      <button className={active === 'spaces' ? 'lb-seg-active' : ''} onClick={() => void plugin.openSpacesView()}>
+        <LucideIcon name="layers" />
+        Spaces
+      </button>
+      <button
+        className={active === 'projects' ? 'lb-seg-active' : ''}
+        onClick={() => void plugin.openProjectsView()}
+      >
+        <LucideIcon name="package" />
+        Projects
+      </button>
+      <button className={active === 'tasks' ? 'lb-seg-active' : ''} onClick={() => void plugin.activateView()}>
+        <LucideIcon name="kanban-square" />
+        Tasks
+      </button>
+    </div>
+  );
+}
+
 function pickerLists(app: App, tasks: TaskItem[]): PickerLists {
   return {
     allProjects: [
@@ -1877,6 +1925,139 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
   );
 }
 
+// Simple overview: every space with its counts, plus the tag registry.
+function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
+  const [tick, refresh] = useVaultTick(app);
+  const spaces = useMemo(() => loadSpaces(app), [app, tick]);
+  const projects = useMemo(() => loadProjects(app), [app, tick]);
+  const tasks = useMemo(() => loadTasks(app), [app, tick]);
+  const registry = useMemo(() => loadTagRegistry(app), [app, tick]);
+
+  const tagCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tasks) for (const tag of t.tags) m.set(tag, (m.get(tag) ?? 0) + 1);
+    return m;
+  }, [tasks]);
+  const allTags = [...new Set([...registry, ...tagCounts.keys()])].sort();
+
+  const spaceRowMenu = (s: Space, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) => i.setTitle('Edit…').setIcon('pencil').onClick(() => new SpaceModal(app, s, refresh).open()));
+    menu.addItem((i) => i.setTitle('Open note').setIcon('file-text').onClick(() => void openFileReuse(app, s.file)));
+    menu.addItem((i) =>
+      i.setTitle('New project here…').setIcon('plus').onClick(() => new ProjectModal(app, null, refresh, s.slug).open())
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  const tagMenuFor = (tag: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem((i) =>
+      i.setTitle('Rename everywhere…').setIcon('pencil').onClick(() => {
+        new TextPromptModal(app, { title: `Rename tag: ${tag}`, placeholder: 'New name…', slug: true, initial: tag, cta: 'Rename' }, (v) => {
+          if (v !== tag) void renameTagEverywhere(app, tag, v).then(refresh);
+        }).open();
+      })
+    );
+    if (!registry.includes(tag)) {
+      menu.addItem((i) =>
+        i.setTitle('Add to registry').setIcon('plus').onClick(() => void addTagToRegistry(app, tag).then(refresh))
+      );
+    } else if (!tagCounts.get(tag)) {
+      menu.addItem((i) =>
+        i.setTitle('Remove from registry').setIcon('x').onClick(() => void removeTagFromRegistry(app, tag).then(refresh))
+      );
+    }
+    menu.addSeparator();
+    menu.addItem((i) =>
+      i.setTitle('Delete everywhere').setIcon('trash').onClick(() => void deleteTagEverywhere(app, tag).then(refresh))
+    );
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  return (
+    <StrictMode>
+      <div className="lb-root">
+        <div className="lb-header lb-header-top">
+          <NavSeg plugin={plugin} active="spaces" />
+          <button className="mod-cta lb-new" onClick={() => new SpaceModal(app, null, refresh).open()}>
+            + New space
+          </button>
+        </div>
+        <div className="lb-projects">
+          {spaces.map((s) => {
+            const projs = projects.filter((p) => p.space === s.slug && p.status === 'active');
+            const open = tasks.filter((t) => t.space === s.slug && !CLOSED.includes(t.status)).length;
+            return (
+              <div
+                key={s.slug}
+                className="lb-projrow"
+                onClick={() => {
+                  plugin.setActiveSpace(s.slug);
+                  void plugin.openProjectsView();
+                }}
+                onContextMenu={(e) => spaceRowMenu(s, e)}
+                title="Click to open projects in this space · right-click for actions"
+              >
+                <span className="lb-projname-col">
+                  <span
+                    className="lb-project"
+                    style={s.color ? ({ '--proj-color': s.color } as React.CSSProperties) : undefined}
+                  >
+                    {s.icon && <LucideIcon name={s.icon} />}
+                    <span className="lb-project-name">{s.slug}</span>
+                  </span>
+                </span>
+                <span className="lb-projdesc">{s.description}</span>
+                <span className="lb-projcount">{projs.length} proj</span>
+                <span className="lb-projcount">{open} open</span>
+              </div>
+            );
+          })}
+          {spaces.length === 0 && <div className="lb-empty">No spaces yet — create citadel and personal.</div>}
+
+          <div className="lb-space-group" style={{ marginTop: 24 }}>
+            <LucideIcon name="tag" />
+            Tags
+            <span className="lb-count">{allTags.length}</span>
+          </div>
+          <div className="lb-tag-cloud">
+            {allTags.map((tag) => (
+              <span
+                key={tag}
+                className={`lb-tag lb-tag-inspect${registry.includes(tag) ? '' : ' lb-tag-unregistered'}`}
+                onClick={(e) => tagMenuFor(tag, e)}
+                onContextMenu={(e) => tagMenuFor(tag, e)}
+                title={registry.includes(tag) ? 'In registry' : 'Used on tasks but not in registry'}
+              >
+                {tag} <span className="lb-count">{tagCounts.get(tag) ?? 0}</span>
+              </span>
+            ))}
+            <span
+              className="lb-tag lb-tag-add"
+              onClick={() =>
+                new TextPromptModal(app, { title: 'New tag', placeholder: 'e.g. bug, idea', slug: true }, (t) =>
+                  void addTagToRegistry(app, t).then(refresh)
+                ).open()
+              }
+              title="Add tag to registry"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M5 12h14" />
+                <path d="M12 5v14" />
+              </svg>
+            </span>
+          </div>
+        </div>
+      </div>
+    </StrictMode>
+  );
+}
+
 function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const [tick, refresh] = useVaultTick(app);
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
@@ -1957,16 +2138,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       <div className="lb-root">
         <div className="lb-header lb-header-top">
           <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
-          <div className="lb-seg">
-            <button onClick={() => void plugin.activateView()}>
-              <LucideIcon name="kanban-square" />
-              Tasks
-            </button>
-            <button className="lb-seg-active">
-              <LucideIcon name="package" />
-              Projects
-            </button>
-          </div>
+          <NavSeg plugin={plugin} active="projects" />
           <button
             className="mod-cta lb-new"
             onClick={() => new ProjectModal(app, null, refresh, activeSpace || null).open()}
@@ -2119,16 +2291,7 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
       <div className="lb-root">
         <div className="lb-header lb-header-top">
           <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
-          <div className="lb-seg">
-            <button onClick={() => void plugin.activateView()}>
-              <LucideIcon name="kanban-square" />
-              Tasks
-            </button>
-            <button className="lb-seg-active" onClick={() => void plugin.openProjectsView()} title="All projects">
-              <LucideIcon name="package" />
-              Projects
-            </button>
-          </div>
+          <NavSeg plugin={plugin} active="projects" />
           <span className="lb-breadcrumb">
             {project.space && (
               <>
@@ -2402,16 +2565,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
       <div className="lb-root">
         <div className="lb-header lb-header-top">
           <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
-          <div className="lb-seg">
-            <button className="lb-seg-active">
-              <LucideIcon name="kanban-square" />
-              Tasks
-            </button>
-            <button onClick={() => void plugin.openProjectsView()}>
-              <LucideIcon name="package" />
-              Projects
-            </button>
-          </div>
+          <NavSeg plugin={plugin} active="tasks" />
           <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
             + New
           </button>
@@ -2615,6 +2769,36 @@ class ProjectsListView extends ItemView {
   }
 }
 
+class SpacesListView extends ItemView {
+  root: Root | null = null;
+
+  constructor(leaf: WorkspaceLeaf, private plugin: LinearBoardPlugin) {
+    super(leaf);
+  }
+
+  getViewType() {
+    return SPACES_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return 'Spaces';
+  }
+  getIcon() {
+    return 'layers';
+  }
+
+  async onOpen() {
+    this.contentEl.empty();
+    this.contentEl.addClass('lb-view');
+    this.root = createRoot(this.contentEl);
+    this.root.render(<SpacesApp app={this.app} plugin={this.plugin} />);
+  }
+
+  async onClose() {
+    this.root?.unmount();
+    this.root = null;
+  }
+}
+
 class ProjectDetailView extends ItemView {
   root: Root | null = null;
   slug = '';
@@ -2669,6 +2853,7 @@ export default class LinearBoardPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new LinearBoardView(leaf, this));
     this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsListView(leaf, this));
     this.registerView(PROJECT_VIEW_TYPE, (leaf) => new ProjectDetailView(leaf, this));
+    this.registerView(SPACES_VIEW_TYPE, (leaf) => new SpacesListView(leaf, this));
     this.addSettingTab(new LinearBoardSettingTab(this.app, this));
 
     this.app.workspace.onLayoutReady(() => {
@@ -2696,6 +2881,12 @@ export default class LinearBoardPlugin extends Plugin {
       id: 'open-projects',
       name: 'Open projects',
       callback: () => void this.openProjectsView(),
+    });
+
+    this.addCommand({
+      id: 'open-spaces',
+      name: 'Open spaces',
+      callback: () => void this.openSpacesView(),
     });
 
     this.addCommand({
@@ -2799,6 +2990,17 @@ export default class LinearBoardPlugin extends Plugin {
     }
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: PROJECTS_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openSpacesView() {
+    const existing = this.app.workspace.getLeavesOfType(SPACES_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.setViewState({ type: SPACES_VIEW_TYPE, active: true });
     this.app.workspace.revealLeaf(leaf);
   }
 

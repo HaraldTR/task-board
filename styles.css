@@ -196,6 +196,23 @@
   background: var(--lb-hover);
 }
 
+/* tag inspector (spaces view) */
+.lb-tag-cloud {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 4px;
+}
+.lb-tag-inspect {
+  cursor: pointer;
+}
+.lb-tag-inspect .lb-count {
+  margin-left: 2px;
+}
+.lb-tag-unregistered {
+  border-style: dashed;
+}
+
 /* segmented view switcher (Tasks | Projects) */
 .lb-seg {
   display: inline-flex;
