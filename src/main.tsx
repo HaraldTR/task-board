@@ -38,6 +38,9 @@ const DEFAULT_ASSIGNEE = 'harald';
 
 const COLUMNS = ['agent-inbox', 'backlog', 'this-week', 'today', 'waiting', 'done', 'cancelled'] as const;
 const CLOSED = ['done', 'cancelled'];
+// Soft-delete: status 'deleted' + archived to inactive/. Never a board lane;
+// recoverable by giving the note a live status again (e.g. via its banner).
+const DELETED_STATUS = 'deleted';
 const COLUMN_LABELS: Record<string, string> = {
   'agent-inbox': 'Inbox',
   backlog: 'Backlog',
@@ -46,6 +49,7 @@ const COLUMN_LABELS: Record<string, string> = {
   waiting: 'Waiting',
   done: 'Done',
   cancelled: 'Cancelled',
+  deleted: 'Deleted',
 };
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3'] as const;
 const PRIORITY_LABELS: Record<string, string> = {
@@ -234,8 +238,10 @@ async function ensureFolder(app: App, path: string) {
 }
 
 function taskFolderFor(status: string): string {
-  return CLOSED.includes(status) ? TASKS_INACTIVE : TASKS_ACTIVE;
+  return CLOSED.includes(status) || status === DELETED_STATUS ? TASKS_INACTIVE : TASKS_ACTIVE;
 }
+
+const softDeleteTask = (app: App, task: TaskItem) => moveTask(app, task, DELETED_STATUS);
 
 // Status changes stamp time: started on first entry to Today, completed on Done
 // (cleared again when a task is reopened). Closed tasks are archived to
@@ -1368,8 +1374,8 @@ function Card({
     menu.addSeparator();
     menu.addItem((i) =>
       i.setTitle('Delete').setIcon('trash').onClick(async () => {
-        await app.vault.trash(task.file, true);
-        new Notice(`${task.id} moved to trash`);
+        await softDeleteTask(app, task);
+        new Notice(`${task.id} deleted — kept in ${TASKS_INACTIVE}`);
         refresh();
       })
     );
@@ -2090,7 +2096,8 @@ function TaskRow({
     m.addSeparator();
     m.addItem((i) =>
       i.setTitle('Delete').setIcon('trash').onClick(async () => {
-        await app.vault.trash(task.file, true);
+        await softDeleteTask(app, task);
+        new Notice(`${task.id} deleted — kept in ${TASKS_INACTIVE}`);
         refresh();
       })
     );
@@ -2319,7 +2326,9 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
         <div className="lb-projects">
           {spaces.map((s) => {
             const projs = projects.filter((p) => p.space === s.slug && p.status === 'active');
-            const open = tasks.filter((t) => t.space === s.slug && !CLOSED.includes(t.status)).length;
+            const open = tasks.filter(
+              (t) => t.space === s.slug && !CLOSED.includes(t.status) && t.status !== DELETED_STATUS
+            ).length;
             return (
               <div
                 key={s.slug}
@@ -2365,7 +2374,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
   const tasks = useMemo(() => loadTasks(app), [app, tick]);
 
   const counts = (slug: string) => {
-    const mine = tasks.filter((t) => t.project === slug);
+    const mine = tasks.filter((t) => t.project === slug && t.status !== DELETED_STATUS);
     const done = mine.filter((t) => t.status === 'done').length;
     const open = mine.filter((t) => !CLOSED.includes(t.status)).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
