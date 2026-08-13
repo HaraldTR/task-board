@@ -1905,6 +1905,20 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
             </span>
           </>
         )}
+        {task.project && (
+          <>
+            <LucideIcon name="chevron-right" />
+            <span
+              className="lb-crumb-space lb-crumb-proj"
+              style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+              onClick={() => void plugin.openProject(task.project!)}
+              title={`Open project: ${task.project}`}
+            >
+              {proj?.icon && <LucideIcon name={proj.icon} />}
+              {task.project}
+            </span>
+          </>
+        )}
         <LucideIcon name="chevron-right" />
         {task.id}
       </span>
@@ -1929,15 +1943,6 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         {proj?.icon && <LucideIcon name={proj.icon} />}
         <span className="lb-project-name">{task.project ?? 'no project'}</span>
       </span>
-      {task.project && (
-        <button
-          className="lb-pill lb-goto-project"
-          onClick={() => void plugin.openProject(task.project!)}
-          title={`Open project: ${task.project}`}
-        >
-          <LucideIcon name="arrow-up-right" />
-        </button>
-      )}
       <button className="lb-pill" onClick={statusMenu} title="Status">
         <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
       </button>

@@ -182,6 +182,17 @@
 }
 .lb-crumb-space:hover {
   color: var(--lb-text);
+  text-decoration: underline;
+}
+.lb-crumb-proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--proj-color, var(--lb-text-muted));
+}
+.lb-crumb-proj .lb-view-icon svg {
+  width: 12px;
+  height: 12px;
 }
 .lb-space-group {
   display: flex;
