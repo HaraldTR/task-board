@@ -197,15 +197,9 @@
   background: var(--lb-hover);
 }
 
-/* mode toggle (list | board) sits right-aligned before Tags/Display */
-.lb-mode-seg {
+/* right side of the filter row: Closed toggle, then mode toggle */
+.lb-closed-toggle {
   margin-left: auto;
-}
-.lb-mode-seg button {
-  padding: 3px 8px;
-}
-.lb-display {
-  margin-left: 0;
 }
 
 /* tag inspector (tasks view panel) */

@@ -2795,7 +2795,16 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             <LucideIcon name="plus" />
             Filter{filtered ? ' •' : ''}
           </button>
-          <div className="lb-seg lb-mode-seg">
+          <button
+            className={`lb-pill lb-closed-toggle${showClosed ? ' lb-pill-active' : ''}`}
+            onClick={() => setShowClosed((v) => !v)}
+            title="Show or hide the Done and Cancelled lanes"
+          >
+            <LucideIcon name={showClosed ? 'eye' : 'eye-off'} />
+            Closed
+            <span className="lb-count">{closedCount}</span>
+          </button>
+          <div className="lb-seg">
             <button
               className={mode === 'list' ? 'lb-seg-active' : ''}
               onClick={() => setMode('list')}
@@ -2811,15 +2820,6 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
               <LucideIcon name="kanban-square" />
             </button>
           </div>
-          <button
-            className={`lb-pill${showClosed ? ' lb-pill-active' : ''}`}
-            onClick={() => setShowClosed((v) => !v)}
-            title="Show or hide the Done and Cancelled lanes"
-          >
-            <LucideIcon name={showClosed ? 'eye' : 'eye-off'} />
-            Closed
-            <span className="lb-count">{closedCount}</span>
-          </button>
         </div>
         {filterOpen && (
           <div className="lb-filter-panel">
