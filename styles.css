@@ -356,7 +356,7 @@
 .lb-board {
   display: flex;
   gap: 8px;
-  padding: 10px;
+  padding: 8px 14px 14px; /* same content-top as the list views — no jump */
   overflow-x: auto;
   flex: 1;
   align-items: flex-start;
