@@ -1,0 +1,485 @@
+<title>Spaces — linear-board UI proposal</title>
+<style>
+  /* Deliberately single-theme: these are mockups of a dark app, so the page
+     commits to the app's own palette. All colors explicit. */
+  :root {
+    --page: #131318;
+    --ink: #f2f2f4;
+    --ink-mute: #9d9dab;
+    --ink-faint: #6d6d7a;
+    --app: #101014;
+    --lane: #26262e;
+    --card: #0a0a0c;
+    --line: #565664;
+    --line-soft: #33333c;
+    --indigo: #5e6ad2;
+    --indigo-bright: #98a0e8;
+    --blue: #4ea7fc;
+    --yellow: #f2c94c;
+    --orange: #f2994a;
+    --red: #eb5757;
+    --green: #4cb782;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.55;
+    padding: 48px 20px 96px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--indigo-bright);
+    margin-bottom: 12px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 42px);
+    line-height: 1.1;
+    margin: 0 0 14px;
+    text-wrap: balance;
+    font-weight: 650;
+  }
+  .lede { color: var(--ink-mute); max-width: 62ch; margin: 0 0 8px; }
+  h2 {
+    font-size: 20px;
+    margin: 72px 0 6px;
+    font-weight: 600;
+  }
+  h2 .no {
+    font-family: var(--mono);
+    color: var(--ink-faint);
+    font-size: 14px;
+    margin-right: 10px;
+  }
+  .note { color: var(--ink-mute); max-width: 68ch; margin: 0 0 20px; font-size: 14.5px; }
+  .note b { color: var(--ink); font-weight: 600; }
+  .callout {
+    border-left: 3px solid var(--indigo);
+    padding: 2px 0 2px 14px;
+    color: var(--ink-mute);
+    font-size: 14px;
+    margin: 14px 0 20px;
+    max-width: 68ch;
+  }
+
+  /* ---------- hierarchy diagram ---------- */
+  .hier {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 13px;
+    margin: 18px 0 6px;
+  }
+  .hier .lvl {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px 14px;
+    background: var(--lane);
+  }
+  .hier .lvl small { display: block; color: var(--ink-faint); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .hier .arrow { color: var(--ink-faint); }
+  .hier .new { border-color: var(--indigo-bright); background: rgba(94, 106, 210, 0.16); }
+
+  pre.tree {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    background: var(--app);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 18px 22px;
+    overflow-x: auto;
+    color: var(--ink-mute);
+    margin: 16px 0 0;
+  }
+  pre.tree .dim { color: var(--ink-faint); }
+  pre.tree .hi { color: var(--indigo-bright); }
+  pre.tree .file { color: var(--ink); }
+
+  /* ---------- app frame + shared mock chrome ---------- */
+  .frame {
+    background: var(--app);
+    border: 1px solid var(--line-soft);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+    margin: 20px 0 10px;
+    font-size: 12.5px;
+  }
+  .frame-cap {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    flex-wrap: wrap;
+  }
+  .hdr + .hdr { border-bottom: 1px solid var(--line-soft); padding-top: 2px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    color: var(--ink-mute);
+    background: transparent;
+    white-space: nowrap;
+  }
+  .pill.on {
+    background: rgba(94, 106, 210, 0.15);
+    border-color: var(--indigo-bright);
+    color: var(--ink);
+  }
+  .pill.accent { border-color: transparent; color: var(--indigo-bright); }
+  .cta {
+    margin-left: auto;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-weight: 500;
+  }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg span { padding: 4px 12px; color: var(--ink-mute); display: inline-flex; gap: 5px; align-items: center; }
+  .seg span + span { border-left: 1px solid var(--line); }
+  .seg .on { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+  .right { margin-left: auto; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .crumb { color: var(--ink-faint); display: inline-flex; align-items: center; gap: 4px; }
+
+  /* space switcher — the new element */
+  .space-sw {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 6px;
+    border: 1px solid var(--indigo-bright);
+    background: rgba(94, 106, 210, 0.12);
+    color: var(--ink);
+    font-weight: 550;
+  }
+  .space-sw .chev { color: var(--ink-faint); font-size: 10px; }
+  .flag {
+    position: relative;
+  }
+  .flag::after {
+    content: "new";
+    position: absolute;
+    top: -9px;
+    right: -14px;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    background: var(--indigo);
+    color: #fff;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  /* board lanes */
+  .board { display: flex; gap: 8px; padding: 12px 14px 16px; overflow-x: auto; }
+  .lane { background: var(--lane); border-radius: 8px; padding: 7px; min-width: 208px; width: 208px; flex-shrink: 0; }
+  .lane h4 { margin: 0 0 7px; font-size: 12px; display: flex; gap: 6px; align-items: center; font-weight: 600; }
+  .lane h4 .n { color: var(--ink-faint); font-weight: 400; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 5px; }
+  .card .top { display: flex; gap: 6px; align-items: center; font-size: 11px; margin-bottom: 3px; }
+  .card .id { color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    border-radius: 9px; padding: 0 7px; font-size: 10.5px; line-height: 16px;
+  }
+  .card .title { font-size: 12px; line-height: 1.35; }
+  .card .meta { display: flex; gap: 6px; align-items: flex-end; margin-top: 5px; }
+  .bars { display: inline-flex; gap: 2px; align-items: flex-end; border: 1px solid var(--line); border-radius: 5px; padding: 3px 5px; height: 17px; }
+  .bars i { width: 3px; border-radius: 1px; background: var(--line); }
+  .bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 6px; }
+  .bars i:nth-child(3) { height: 8px; } .bars i:nth-child(4) { height: 10px; }
+  .sz { border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; line-height: 17px; font-size: 10.5px; color: var(--ink-mute); }
+
+  /* projects list */
+  .plist { padding: 6px 14px 14px; }
+  .group-h {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--ink-mute);
+    margin: 12px 0 2px; padding: 0 4px;
+  }
+  .group-h .n { color: var(--ink-faint); font-weight: 400; }
+  .prow {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 6px; border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px;
+  }
+  .prow .desc { color: var(--ink-mute); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .prow .num { color: var(--ink-mute); width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 11.5px; }
+
+  /* project detail */
+  .proj-head { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 8px; }
+  .trow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .chip.lg { font-size: 15px; font-weight: 600; padding: 3px 13px; border-radius: 12px; }
+  .sect { padding: 4px 16px 14px; }
+  .sect h5 { display: flex; gap: 6px; align-items: center; margin: 12px 0 4px; font-size: 11.5px; }
+  .trow-item { display: flex; gap: 10px; align-items: center; padding: 6px 6px; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+  .trow-item .id { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); width: 44px; }
+  .trow-item .t { flex: 1; }
+
+  /* banner mock */
+  .banner { display: flex; align-items: center; gap: 6px; padding: 9px 14px; background: var(--lane); border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
+  .doc { padding: 18px 22px; color: var(--ink-mute); }
+  .doc h3 { color: var(--red); margin: 0 0 10px; font-size: 19px; }
+  .doc p { margin: 0; font-size: 13px; }
+
+  /* modal mock */
+  .modal-stage { background: rgba(0, 0, 0, 0.45); padding: 28px; display: flex; justify-content: center; }
+  .modal { background: var(--app); border: 1px solid var(--line); border-radius: 10px; padding: 16px; width: min(430px, 100%); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+  .modal h4 { margin: 0 0 12px; font-size: 14px; }
+  .field { border: 1px solid var(--line-soft); background: var(--card); border-radius: 6px; padding: 7px 10px; color: var(--ink-faint); font-size: 12.5px; margin-bottom: 10px; }
+  .field.filled { color: var(--ink); }
+  .icons { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .icons span {
+    width: 30px; height: 30px; border: 1px solid var(--line-soft); border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--ink-mute); font-size: 14px;
+  }
+  .icons .sel { border-color: var(--indigo-bright); background: rgba(94,106,210,.15); color: var(--ink); }
+  .swatches { display: flex; gap: 7px; align-items: center; margin-bottom: 14px; }
+  .swatches i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; }
+  .swatches .sel { border-color: var(--ink); }
+  .modal .actions { display: flex; justify-content: flex-end; }
+
+  .annos { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; max-width: 70ch; }
+  .annos li { display: flex; gap: 10px; font-size: 13.5px; color: var(--ink-mute); }
+  .annos .k {
+    font-family: var(--mono); font-size: 10.5px; color: var(--indigo-bright);
+    border: 1px solid var(--line-soft); border-radius: 5px; height: 20px; min-width: 20px;
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
+  }
+  .annos b { color: var(--ink); font-weight: 600; }
+
+  ol.steps { max-width: 68ch; padding-left: 22px; color: var(--ink-mute); font-size: 14px; display: grid; gap: 8px; }
+  ol.steps b { color: var(--ink); }
+  .mono { font-family: var(--mono); font-size: 0.92em; color: var(--ink); background: rgba(255,255,255,.05); border-radius: 4px; padding: 0 5px; }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">linear-board · proposal · v0.11</div>
+  <h1>Spaces: the context layer above projects</h1>
+  <p class="lede">Linear's hierarchy is Workspace → Team → Project → Issue. This maps it onto the vault: the vault is the workspace, <b style="color:var(--ink)">spaces</b> are your teams (citadel, personal), projects nest inside them as folders, and tasks stay flat — inheriting their space through their project.</p>
+
+  <h2><span class="no">00</span>Hierarchy &amp; folders</h2>
+  <div class="hier">
+    <span class="lvl"><small>vault</small>pm/</span><span class="arrow">→</span>
+    <span class="lvl new"><small>space</small>citadel</span><span class="arrow">→</span>
+    <span class="lvl"><small>project</small>plumbus</span><span class="arrow">→</span>
+    <span class="lvl"><small>task</small>T-022</span>
+  </div>
+  <p class="note">Projects get <b>physical folder grouping by space</b> — the parent folder <i>is</i> the space, so it can never dangle or typo. Tasks stay flat: they change status constantly and derive space via <span class="mono">project:</span>, so the board always sees everything and space filtering costs nothing.</p>
+<pre class="tree">pm/
+├── spaces/                        <span class="dim">← space registry: one typed note each</span>
+│   ├── <span class="hi">citadel.md</span>                 <span class="dim">type: space · icon: globe · color: "#4ea7fc"</span>
+│   └── <span class="hi">personal.md</span>                <span class="dim">type: space · icon: heart · color: "#f2c94c"</span>
+├── projects/
+│   ├── active/
+│   │   ├── <span class="hi">citadel/</span>               <span class="dim">← space folder (structural)</span>
+│   │   │   ├── citadel-general/   <span class="dim">← migration catch-all</span>
+│   │   │   ├── plumbus/<span class="file">plumbus.md</span>
+│   │   │   └── meeseeks-box/
+│   │   └── <span class="hi">personal/</span>
+│   │       ├── personal-general/
+│   │       └── szechuan-sauce/
+│   └── inactive/<span class="dim">&lt;space&gt;/&lt;project&gt;/</span>
+├── tasks/
+│   ├── active/                    <span class="dim">← flat, all spaces mixed</span>
+│   └── inactive/
+└── tags.md</pre>
+
+  <h2><span class="no">01</span>Task board — all tasks, scoped on demand</h2>
+  <p class="note">The <b>space switcher</b> becomes the first element of the nav row, on every view — Linear's team switcher, relocated into the header. It defaults to <b>All spaces</b> (your "tasks should naturally be all tasks"), and one click scopes the whole board. The switcher is tinted with the active space's color so context is legible peripherally.</p>
+  <div class="frame">
+    <div class="frame-cap">Task board · space = citadel</div>
+    <div class="hdr">
+      <span class="space-sw flag"><span class="dot" style="background:var(--blue)"></span> citadel <span class="chev">▾</span></span>
+      <span class="seg"><span class="on">▦ Tasks</span><span>⬡ Projects</span></span>
+      <span class="cta">+ New</span>
+    </div>
+    <div class="hdr">
+      <span class="pill on">All</span>
+      <span class="pill">🔥 Urgent</span>
+      <span class="pill accent">＋ Filter</span>
+      <span class="pill right">⚙ Display</span>
+    </div>
+    <div class="board">
+      <div class="lane">
+        <h4><span class="dot" style="border:1.5px solid var(--ink-faint)"></span> Backlog <span class="n">2</span></h4>
+        <div class="card">
+          <div class="top"><span class="id">T-034</span><span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ plumbus</span></div>
+          <div class="title">dinglebop smoothing pass</div>
+          <div class="meta"><span class="bars"><i style="background:var(--yellow)"></i><i style="background:var(--yellow)"></i><i></i><i></i></span><span class="sz">M</span></div>
+        </div>
+        <div class="card">
+          <div class="top"><span class="id">T-010</span><span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ citadel-general</span></div>
+          <div class="title">grumbo ops</div>
+          <div class="meta"><span class="bars"><i></i><i></i><i></i><i></i></span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <h4><span class="dot" style="background:var(--blue)"></span> This week <span class="n">2</span></h4>
+        <div class="card">
+          <div class="top"><span class="id">T-015</span><span class="chip" style="color:var(--green);background:rgba(76,183,130,.12)">⚡ meeseeks-box</span></div>
+          <div class="title">sketch the schlami rework</div>
+          <div class="meta"><span class="bars"><i style="background:var(--red)"></i><i style="background:var(--red)"></i><i style="background:var(--red)"></i><i style="background:var(--red)"></i></span><span class="sz">S</span></div>
+        </div>
+        <div class="card">
+          <div class="top"><span class="id">T-021</span><span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ citadel-general</span></div>
+          <div class="title">citadel mobile</div>
+          <div class="meta"><span class="bars"><i></i><i></i><i></i><i></i></span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <h4><span class="dot" style="background:var(--yellow)"></span> Today <span class="n">1</span></h4>
+        <div class="card">
+          <div class="top"><span class="id">T-022</span><span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ plumbus</span></div>
+          <div class="title">continue fleeb juice demo</div>
+          <div class="meta"><span class="bars"><i style="background:var(--orange)"></i><i style="background:var(--orange)"></i><i style="background:var(--orange)"></i><i></i></span></div>
+        </div>
+      </div>
+      <div class="lane">
+        <h4><span class="dot" style="background:var(--orange)"></span> Waiting <span class="n">0</span></h4>
+      </div>
+    </div>
+  </div>
+  <ul class="annos">
+    <li><span class="k">a</span><span><b>Space switcher</b> leads the nav row: colored dot + name + chevron. Menu lists All spaces / citadel / personal / + New space. Selection persists in <span class="mono">data.json</span>.</span></li>
+    <li><span class="k">b</span><span>Cards are unchanged — the project chip already carries the color, and with the board scoped to a space, every chip belongs to it. In <b>All spaces</b> the mixed chip colors do the separating.</span></li>
+    <li><span class="k">c</span><span><b>Space also joins the filter panel</b> as a field (project / tags / … / space), so a saved view like "citadel P0s" works without the switcher.</span></li>
+  </ul>
+
+  <h2><span class="no">02</span>Projects overview — grouped by space</h2>
+  <p class="note">With <b>All spaces</b> selected, projects group under space section headers (icon + name + count). With a space selected, only that group renders — same rows, no headers.</p>
+  <div class="frame">
+    <div class="frame-cap">Projects · space = all</div>
+    <div class="hdr">
+      <span class="space-sw"><span class="dot" style="background:linear-gradient(90deg,var(--blue),var(--yellow))"></span> All spaces <span class="chev">▾</span></span>
+      <span class="seg"><span>▦ Tasks</span><span class="on">⬡ Projects</span></span>
+      <span class="cta">+ New project</span>
+    </div>
+    <div class="hdr">
+      <span class="pill on">Active</span><span class="pill">Archived</span><span class="pill">All</span>
+    </div>
+    <div class="plist">
+      <div class="group-h"><span class="dot" style="background:var(--blue)"></span> citadel <span class="n">3 projects</span></div>
+      <div class="prow"><span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ plumbus</span><span class="desc">Plumbus assembly line</span><span class="num">4</span><span class="num">1</span><span class="num">20%</span></div>
+      <div class="prow"><span class="chip" style="color:var(--green);background:rgba(76,183,130,.12)">⚡ meeseeks-box</span><span class="desc">Meeseeks box firmware</span><span class="num">2</span><span class="num">0</span><span class="num">0%</span></div>
+      <div class="prow"><span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ citadel-general</span><span class="desc">Catch-all — peel real projects out of here</span><span class="num">6</span><span class="num">2</span><span class="num">25%</span></div>
+      <div class="group-h" style="margin-top:18px"><span class="dot" style="background:var(--yellow)"></span> personal <span class="n">2 projects</span></div>
+      <div class="prow"><span class="chip" style="color:var(--indigo-bright);background:rgba(94,106,210,.14)">♥ szechuan-sauce</span><span class="desc">Sauce quest</span><span class="num">2</span><span class="num">0</span><span class="num">0%</span></div>
+      <div class="prow"><span class="chip" style="color:var(--yellow);background:rgba(242,201,76,.1)">♥ personal-general</span><span class="desc">Catch-all</span><span class="num">11</span><span class="num">1</span><span class="num">8%</span></div>
+    </div>
+  </div>
+  <ul class="annos">
+    <li><span class="k">a</span><span><b>Section header = space</b>: colored dot, name, project count. Right-click a header: edit space, archive space, new project here.</span></li>
+    <li><span class="k">b</span><span><b>+ New project</b> asks for a space (pre-filled when the switcher is scoped). The modal gains one pill: <span class="mono">Space: citadel ▾</span>.</span></li>
+  </ul>
+
+  <h2><span class="no">03</span>Project detail — breadcrumb grows one level</h2>
+  <div class="frame">
+    <div class="frame-cap">Project view</div>
+    <div class="hdr">
+      <span class="space-sw"><span class="dot" style="background:var(--blue)"></span> citadel <span class="chev">▾</span></span>
+      <span class="seg"><span>▦ Tasks</span><span class="on">⬡ Projects</span></span>
+      <span class="crumb">› <span class="dot" style="background:var(--blue);width:7px;height:7px"></span> citadel › plumbus</span>
+    </div>
+    <div class="proj-head">
+      <div class="trow">
+        <span class="chip lg" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ plumbus</span>
+        <span class="right" style="display:flex;gap:6px">
+          <span class="pill">Edit</span><span class="pill">Open note</span><span class="pill">Move to space…</span><span class="pill">Archive</span><span class="cta" style="margin:0">+ New task</span>
+        </span>
+      </div>
+      <div style="color:var(--ink-mute);font-size:12.5px">Plumbus assembly line</div>
+    </div>
+    <div class="sect">
+      <h5><span class="dot" style="background:var(--yellow)"></span> Today <span class="n" style="color:var(--ink-faint)">1</span></h5>
+      <div class="trow-item"><span class="id">T-022</span><span class="t">continue fleeb juice demo</span><span class="bars"><i style="background:var(--orange)"></i><i style="background:var(--orange)"></i><i style="background:var(--orange)"></i><i></i></span></div>
+      <h5><span class="dot" style="border:1.5px solid var(--ink-faint)"></span> Backlog <span class="n" style="color:var(--ink-faint)">1</span></h5>
+      <div class="trow-item"><span class="id">T-034</span><span class="t">dinglebop smoothing pass</span><span class="sz">M</span></div>
+    </div>
+  </div>
+  <ul class="annos">
+    <li><span class="k">a</span><span>Breadcrumb reads <b>Projects › citadel › plumbus</b>; the space segment is clickable and opens the overview scoped to citadel.</span></li>
+    <li><span class="k">b</span><span>New action: <b>Move to space…</b> — moves the project folder between space folders and every task follows automatically (it's just the folder parent changing).</span></li>
+  </ul>
+
+  <h2><span class="no">04</span>Task note banner — space context, one glance</h2>
+  <div class="frame">
+    <div class="frame-cap">Task note</div>
+    <div class="banner">
+      <span class="pill">▦ Board</span>
+      <span class="crumb"><span class="dot" style="background:var(--blue);width:7px;height:7px"></span> citadel ›</span>
+      <span class="chip" style="color:var(--blue);background:rgba(78,167,252,.12)">◆ plumbus</span>
+      <span class="pill" style="padding:0 5px">↗</span>
+      <span class="id" style="font-family:var(--mono);color:var(--ink-faint)">T-022</span>
+      <span class="pill"><span class="dot" style="background:var(--yellow)"></span> Today</span>
+      <span class="bars"><i style="background:var(--orange)"></i><i style="background:var(--orange)"></i><i style="background:var(--orange)"></i><i></i></span>
+      <span class="sz">S</span>
+      <span class="pill right">✎ Edit</span>
+    </div>
+    <div class="doc">
+      <h3>T-022 continue fleeb juice demo</h3>
+      <p>Notes body continues as normal markdown…</p>
+    </div>
+  </div>
+  <ul class="annos">
+    <li><span class="k">a</span><span>A faint <b>space breadcrumb</b> (dot + name) sits before the project chip — read-only context, since space is derived. Clicking it opens the space-scoped board.</span></li>
+  </ul>
+
+  <h2><span class="no">05</span>New space — structured like everything else</h2>
+  <div class="frame">
+    <div class="modal-stage">
+      <div class="modal">
+        <h4>New space</h4>
+        <div class="field filled">citadel</div>
+        <div class="field">One-line description…</div>
+        <div class="icons"><span>🔥</span><span>🐛</span><span>★</span><span class="sel">◆</span><span>♥</span><span>🚀</span><span>⌂</span><span>✈</span></div>
+        <div class="swatches"><i style="background:var(--indigo)"></i><i class="sel" style="background:var(--blue)"></i><i style="background:var(--green)"></i><i style="background:var(--yellow)"></i><i style="background:var(--orange)"></i><i style="background:var(--red)"></i><span style="color:var(--ink-faint);font-family:var(--mono);font-size:11px">#hex</span></div>
+        <div class="actions"><span class="cta" style="margin:0">Create space</span></div>
+      </div>
+    </div>
+  </div>
+  <ul class="annos">
+    <li><span class="k">a</span><span>Same dialog family as projects: name → slug, icon grid, color swatches. Writes <span class="mono">pm/spaces/&lt;slug&gt;.md</span> and creates <span class="mono">pm/projects/active/&lt;slug&gt;/</span> + the <span class="mono">&lt;slug&gt;-general</span> catch-all in one go.</span></li>
+  </ul>
+
+  <h2><span class="no">06</span>Introducing it — the migration, in order</h2>
+  <ol class="steps">
+    <li><b>Create spaces</b> <span class="mono">citadel</span> and <span class="mono">personal</span> (notes + space folders + catch-all projects) — done by code, one command.</li>
+    <li><b>Re-point tasks</b>: every task with <span class="mono">project: citadel</span> → <span class="mono">citadel-general</span>, <span class="mono">personal</span> → <span class="mono">personal-general</span>. The old citadel/personal pseudo-project folders (if any) are absorbed.</li>
+    <li><b>Move existing real projects</b> (test-project, szechuan-sauce, morty…) into their space folder — you assign each via one dialog pass, or drag folders in the file explorer.</li>
+    <li><b>Peel projects out of the catch-alls</b> at your leisure — select a batch of citadel-general tasks, give them a real project. The catch-all shrinking toward zero is the health metric.</li>
+    <li>Anything space-less stays visible: projects not yet inside a space folder show under an <b>“unspaced”</b> group in the overview until you file them.</li>
+  </ol>
+
+  <p class="callout">Everything above is additive to the current data model — no task frontmatter changes at all (space is derived), projects only change path. The plugin's rename/archive machinery already moves folders safely, so the space layer rides on code paths that exist today.</p>
+</div>
