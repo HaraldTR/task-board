@@ -1971,9 +1971,11 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
       >
         {proj?.icon && <LucideIcon name={proj.icon} />}
         <span className="lb-project-name">{task.project ?? 'no project'}</span>
+        <span className="lb-chev">▾</span>
       </span>
       <button className="lb-pill" onClick={statusMenu} title="Status">
         <span className={`lb-dot lb-dot-${task.status}`} /> {COLUMN_LABELS[task.status]}
+        <span className="lb-chev">▾</span>
       </button>
       <span
         className={`lb-priority lb-priority-${(task.priority ?? 'none').toLowerCase()}`}
@@ -2029,6 +2031,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         title="Assignee"
       >
         @{task.assignee}
+        <span className="lb-chev">▾</span>
       </button>
       <button
         className="lb-pill"
@@ -2037,6 +2040,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
       >
         <LucideIcon name="calendar" />
         {task.due ? `Due ${task.due}` : 'Due'}
+        <span className="lb-chev">▾</span>
       </button>
       <span className="lb-banner-spacer" />
       {task.created && (
