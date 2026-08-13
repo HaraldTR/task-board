@@ -2137,7 +2137,6 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     <StrictMode>
       <div className="lb-root">
         <div className="lb-header lb-header-top">
-          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <NavSeg plugin={plugin} active="projects" />
           <button
             className="mod-cta lb-new"
@@ -2147,6 +2146,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
           </button>
         </div>
         <div className="lb-header">
+          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <div className="lb-pills">
             {filterPill('active', 'Active')}
             {filterPill('inactive', 'Archived')}
@@ -2290,7 +2290,6 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: LinearBoardPlugin
     <StrictMode>
       <div className="lb-root">
         <div className="lb-header lb-header-top">
-          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <NavSeg plugin={plugin} active="projects" />
           <span className="lb-breadcrumb">
             {project.space && (
@@ -2564,13 +2563,13 @@ function BoardApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
     <StrictMode>
       <div className="lb-root">
         <div className="lb-header lb-header-top">
-          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <NavSeg plugin={plugin} active="tasks" />
           <button className="mod-cta lb-new" onClick={() => setAdding(true)}>
             + New
           </button>
         </div>
         <div className="lb-header">
+          <SpaceSwitcher app={app} plugin={plugin} space={activeSpace} />
           <div className="lb-pills">
             <button
               className={`lb-pill lb-filter-pill${activeView === 'All' ? ' lb-pill-active' : ''}`}
