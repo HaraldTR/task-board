@@ -103,20 +103,15 @@
   font-size: var(--font-ui-smaller);
 }
 
-/* ---------- task-note banner: row 1 navigation, row 2 field pills ---------- */
+/* ---------- task-note banner: row 1 navigation, row 2 field pills ----------
+   Rows reuse .lb-header/.lb-header-top so spacing and nav placement match
+   the board/projects/spaces views exactly. */
 .lb-note-banner {
   flex-direction: column;
-  gap: 7px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--lb-border);
+  gap: 0;
+  padding: 0;
   background: var(--lb-surface-2);
   font-size: var(--font-ui-smaller);
-}
-.lb-banner-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
 }
 .lb-banner-spacer {
   margin-left: auto;

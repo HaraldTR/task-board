@@ -1924,7 +1924,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
 
   return (
     <>
-      <div className="lb-banner-row">
+      <div className="lb-header lb-header-top">
       <NavSeg plugin={plugin} active="tasks" />
       <span className="lb-breadcrumb">
         {task.space && (
@@ -1957,7 +1957,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         {task.id}
       </span>
       </div>
-      <div className="lb-banner-row">
+      <div className="lb-header">
       <span
         className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
         style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
