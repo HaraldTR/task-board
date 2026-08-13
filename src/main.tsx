@@ -2248,7 +2248,7 @@ function TagsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             className="mod-cta lb-new"
             onClick={() => new TagEditModal(app, null, refresh).open()}
           >
-            + New tag
+            + New<span className="lb-new-suffix"> tag</span>
           </button>
         </div>
         <div className="lb-projects">
@@ -2310,7 +2310,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
         <div className="lb-header lb-header-top">
           <NavSeg plugin={plugin} active="spaces" />
           <button className="mod-cta lb-new" onClick={() => new SpaceModal(app, null, refresh).open()}>
-            + New space
+            + New<span className="lb-new-suffix"> space</span>
           </button>
         </div>
         <div className="lb-projects">
@@ -2338,7 +2338,7 @@ function SpacesApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
                   </span>
                 </span>
                 <span className="lb-projdesc">{s.description}</span>
-                <span className="lb-projcount lb-projcount-wide">{projs.length} proj</span>
+                <span className="lb-projcount lb-projcount-wide">{projs.length} project{projs.length === 1 ? '' : 's'}</span>
                 <span className="lb-projcount lb-projcount-wide">{open} open</span>
               </div>
             );
@@ -2434,7 +2434,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: LinearBoardPlugin }) {
             className="mod-cta lb-new"
             onClick={() => new ProjectModal(app, null, refresh, activeSpace || null).open()}
           >
-            + New project
+            + New<span className="lb-new-suffix"> project</span>
           </button>
         </div>
         <div className="lb-header">

@@ -828,7 +828,7 @@
   white-space: nowrap;
 }
 .lb-projcount-wide {
-  width: 64px;
+  width: 86px;
 }
 .lb-projcreated {
   width: 90px;
@@ -1155,5 +1155,64 @@
     font-size: 13px;
     line-height: 20px;
     padding: 0 6px;
+  }
+
+  /* nav row: taller, narrower pills so Spaces|Projects|Tasks + Tags + New fit one line */
+  .lb-header-top .lb-seg,
+  .lb-header-top .lb-pill,
+  .lb-header-top .lb-new {
+    height: 32px;
+  }
+  .lb-seg button {
+    padding: 0 8px;
+    gap: 4px;
+  }
+  .lb-header-top {
+    gap: 6px;
+  }
+  .lb-new {
+    padding: 0 8px;
+  }
+  .lb-new-suffix {
+    display: none;
+  }
+
+  /* filter row: wrap deliberately with even spacing instead of cramming */
+  .lb-header {
+    row-gap: 6px;
+    gap: 6px;
+  }
+  .lb-closed-toggle {
+    margin-left: 0;
+  }
+  .lb-space-sw {
+    height: 28px;
+  }
+
+  /* list rows: no horizontal scroll — drop low-value columns, let name flex */
+  .lb-projname-col {
+    width: auto;
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+  }
+  .lb-projdesc,
+  .lb-projcreated {
+    display: none;
+  }
+  .lb-projcount {
+    width: 34px;
+  }
+  .lb-projcount-wide {
+    width: 74px;
+  }
+  .lb-projrow {
+    gap: 8px;
+    padding: 9px 4px;
+  }
+
+  /* task-note banner: clear Obsidian mobile's floating view buttons */
+  .lb-note-banner {
+    padding-top: 36px;
   }
 }
