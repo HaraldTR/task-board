@@ -1487,28 +1487,28 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: LinearBoardPlugin
         <LucideIcon name="kanban-square" />
         Board
       </button>
-      {task.project ? (
-        <span
-          className="lb-project"
-          style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+      <span
+        className={`lb-project${task.project ? '' : ' lb-project-empty'}`}
+        style={proj?.color ? ({ '--proj-color': proj.color } as React.CSSProperties) : undefined}
+        onClick={(e) =>
+          projectMenu(app, lists.allProjects, task.project, async (p) => {
+            await setProp(app, task, 'project', p);
+            refresh();
+          }, e)
+        }
+        title="Change project"
+      >
+        {proj?.icon && <LucideIcon name={proj.icon} />}
+        <span className="lb-project-name">{task.project ?? 'no project'}</span>
+      </span>
+      {task.project && (
+        <button
+          className="lb-pill lb-goto-project"
           onClick={() => void plugin.openProject(task.project!)}
-          title="Open project"
+          title={`Open project: ${task.project}`}
         >
-          {proj?.icon && <LucideIcon name={proj.icon} />}
-          <span className="lb-project-name">{task.project}</span>
-        </span>
-      ) : (
-        <span
-          className="lb-project lb-project-empty"
-          onClick={(e) =>
-            projectMenu(app, lists.allProjects, null, async (p) => {
-              await setProp(app, task, 'project', p);
-              refresh();
-            }, e)
-          }
-        >
-          no project
-        </span>
+          <LucideIcon name="arrow-up-right" />
+        </button>
       )}
       <span className="lb-id">{task.id}</span>
       <button className="lb-pill" onClick={statusMenu} title="Status">

@@ -116,6 +116,10 @@
 .lb-banner-spacer {
   margin-left: auto;
 }
+.lb-goto-project {
+  padding: 0 5px;
+  margin-left: -3px;
+}
 /* hide Obsidian's raw Properties list on task notes — the banner replaces it */
 .lb-task-note .metadata-container {
   display: none;
