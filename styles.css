@@ -814,14 +814,22 @@
 .lb-projrow:hover {
   background: var(--lb-hover);
 }
-.lb-projrow-head {
-  color: var(--lb-text-faint);
+.lb-projrow-head,
+.lb-projrow-head .lb-projname-col,
+.lb-projrow-head .lb-projdesc,
+.lb-projrow-head .lb-projcount {
+  color: var(--lb-text-muted);
   font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+.lb-projrow-head {
   cursor: default;
+  background: var(--lb-surface-2);
   border-bottom: 1px solid var(--lb-border);
+  border-radius: 6px 6px 0 0;
 }
 .lb-projrow-head:hover {
-  background: transparent;
+  background: var(--lb-surface-2);
 }
 .lb-projname-col {
   width: 180px;
