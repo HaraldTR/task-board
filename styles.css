@@ -434,9 +434,11 @@
 .lb-archive-col .lb-column-body {
   gap: 0;
 }
-.lb-doc-more {
+/* tail card into the searchable archive view */
+.lb-arch-more {
   color: var(--lb-text-faint);
   font-style: italic;
+  text-align: center;
 }
 
 /* ---------- card ---------- */

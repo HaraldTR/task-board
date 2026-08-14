@@ -2276,52 +2276,11 @@ function loadArchiveFiles(app: App, plugin: TaskBoardPlugin): TFile[] {
     .sort((a, b) => b.stat.mtime - a.stat.mtime);
 }
 
-// Archived lane content shared by board and list mode: read-only rows, capped,
-// with a tail row that opens the full searchable Archive view.
-const ARCHIVE_LANE_CAP = 100;
-
-function ArchiveRows({ app, plugin, files }: { app: App; plugin: TaskBoardPlugin; files: TFile[] }) {
-  const shown = files.slice(0, ARCHIVE_LANE_CAP);
-  return (
-    <>
-      {shown.map((f) => (
-        <div key={f.path} className="lb-doc-row" onClick={() => void openFileReuse(app, f)} title={f.path}>
-          <LucideIcon name="file-text" />
-          <span className="lb-doc-name">{f.basename}</span>
-          <span className="lb-arch-date">{new Date(f.stat.mtime).toISOString().slice(0, 10)}</span>
-        </div>
-      ))}
-      <div className="lb-doc-row lb-doc-more" onClick={() => void plugin.openArchiveView()}>
-        <LucideIcon name="search" />
-        <span className="lb-doc-name">
-          {files.length > shown.length
-            ? `${files.length - shown.length} more — search the archive`
-            : 'Search the archive'}
-        </span>
-      </div>
-    </>
-  );
-}
-
-function ArchiveApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
-  const [tick] = useVaultTick(app);
-  const [query, setQuery] = useState('');
-  const [label, setLabel] = useState<string | null>(null);
+// Optional YAML side-car mapping archived file names to project labels.
+function useArchiveLabels(app: App, plugin: TaskBoardPlugin, tick: number) {
   const [labels, setLabels] = useState<Map<string, string>>(new Map());
-
-  const folders = archiveFolderList(plugin);
-  const files = useMemo(
-    () =>
-      app.vault
-        .getMarkdownFiles()
-        .filter((f) => folders.some((r) => f.path.startsWith(r + '/')))
-        .sort((a, b) => b.stat.mtime - a.stat.mtime),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [app, tick, plugin.settings.archiveFolders]
-  );
-
+  const path = plugin.settings.archiveLabelsFile;
   useEffect(() => {
-    const path = plugin.settings.archiveLabelsFile;
     if (!path) {
       setLabels(new Map());
       return;
@@ -2351,7 +2310,67 @@ function ArchiveApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
     return () => {
       live = false;
     };
-  }, [app, tick, plugin.settings.archiveLabelsFile]);
+  }, [app, tick, path]);
+  return labels;
+}
+
+// Archived lane content shared by board and list mode: read-only rows, capped,
+// with a tail row that opens the full searchable Archive view.
+const ARCHIVE_LANE_CAP = 100;
+
+function ArchiveRows({
+  app,
+  plugin,
+  files,
+  labels,
+}: {
+  app: App;
+  plugin: TaskBoardPlugin;
+  files: TFile[];
+  labels: Map<string, string>;
+}) {
+  const shown = files.slice(0, ARCHIVE_LANE_CAP);
+  return (
+    <>
+      {shown.map((f) => {
+        const label = labels.get(f.name);
+        return (
+          <div key={f.path} className="lb-card" onClick={() => void openFileReuse(app, f)} title={f.path}>
+            <div className="lb-card-top">
+              <span className="lb-id">note</span>
+              {label && <EntityChip color="var(--lb-gray)" label={label} />}
+            </div>
+            <div className="lb-title">{f.basename}</div>
+            <div className="lb-meta">
+              <span className="lb-arch-date">{new Date(f.stat.mtime).toISOString().slice(0, 10)}</span>
+            </div>
+          </div>
+        );
+      })}
+      <div className="lb-card lb-arch-more" onClick={() => void plugin.openArchiveView()}>
+        <div className="lb-title">
+          {files.length > shown.length
+            ? `${files.length - shown.length} more — search the archive`
+            : 'Search the archive'}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ArchiveApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
+  const [tick] = useVaultTick(app);
+  const [query, setQuery] = useState('');
+  const [label, setLabel] = useState<string | null>(null);
+  const labels = useArchiveLabels(app, plugin, tick);
+
+  const folders = archiveFolderList(plugin);
+  const files = useMemo(
+    () => loadArchiveFiles(app, plugin),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [app, plugin, tick, plugin.settings.archiveFolders]
+  );
+
 
   const q = query.toLowerCase();
   const filtered = files.filter((f) => {
@@ -3052,8 +3071,8 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const valueLabel = (field: FilterField, v: string) =>
     field === 'status' ? COLUMN_LABELS[v] ?? v : v;
 
-  const closedCount = visible.filter((t) => isClosedStatus(t.status)).length;
   // the old-card archive rides with the closed lanes: done · cancelled · archived
+  const archLabels = useArchiveLabels(app, plugin, tick);
   const archFiles = useMemo(
     () => (showClosed ? loadArchiveFiles(app, plugin) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3104,7 +3123,6 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
           >
             <LucideIcon name={showClosed ? 'eye' : 'eye-off'} />
             Closed
-            <span className="lb-count">{closedCount}</span>
           </button>
           <div className="lb-seg lb-mode-seg">
             <button
@@ -3188,7 +3206,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
                   <span className="lb-count">{archFiles.length}</span>
                 </div>
                 <div className="lb-column-body">
-                  <ArchiveRows app={app} plugin={plugin} files={archFiles} />
+                  <ArchiveRows app={app} plugin={plugin} files={archFiles} labels={archLabels} />
                 </div>
               </div>
             )}
@@ -3230,7 +3248,7 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
                   Archived
                   <span className="lb-count">{archFiles.length}</span>
                 </div>
-                <ArchiveRows app={app} plugin={plugin} files={archFiles} />
+                <ArchiveRows app={app} plugin={plugin} files={archFiles} labels={archLabels} />
               </div>
             )}
           </div>
