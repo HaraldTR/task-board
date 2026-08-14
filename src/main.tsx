@@ -2,6 +2,7 @@ import {
   App,
   ItemView,
   MarkdownView,
+  MarkdownRenderer,
   Menu,
   Modal,
   Notice,
@@ -2663,6 +2664,37 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   );
 }
 
+// Folder-note body rendered as real markdown; internal links open in tabs.
+function MarkdownBlock({
+  app,
+  plugin,
+  text,
+  sourcePath,
+}: {
+  app: App;
+  plugin: TaskBoardPlugin;
+  text: string;
+  sourcePath: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.empty();
+    void MarkdownRenderer.render(app, text, el, sourcePath, plugin);
+    const onClick = (evt: MouseEvent) => {
+      const a = (evt.target as HTMLElement).closest('a.internal-link');
+      if (!a) return;
+      evt.preventDefault();
+      const href = a.getAttribute('data-href') ?? a.getAttribute('href') ?? '';
+      void app.workspace.openLinkText(href, sourcePath);
+    };
+    el.addEventListener('click', onClick);
+    return () => el.removeEventListener('click', onClick);
+  }, [app, plugin, text, sourcePath]);
+  return <div className="lb-proj-doc" ref={ref} />;
+}
+
 function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; slug: string }) {
   const [tick, refresh] = useVaultTick(app);
   const [adding, setAdding] = useState(false);
@@ -2675,6 +2707,34 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; 
   const mine = allTasks
     .filter((t) => t.project === slug)
     .sort(byPriorityThenId);
+
+  // folder-note body = the project's long description; other files = its notes
+  const [docText, setDocText] = useState('');
+  useEffect(() => {
+    const f = project?.file;
+    if (!f) {
+      setDocText('');
+      return;
+    }
+    let live = true;
+    void app.vault.cachedRead(f).then((raw) => {
+      if (!live) return;
+      const m = raw.match(/^---\n[\s\S]*?\n---\n/);
+      setDocText((m ? raw.slice(m[0].length) : raw).trim());
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app, project?.file?.path, tick]);
+  const docs = useMemo(() => {
+    const parent = project?.file?.parent;
+    if (!parent) return [] as TFile[];
+    return parent.children
+      .filter((c): c is TFile => c instanceof TFile && c.extension === 'md' && c.path !== project?.file?.path)
+      .sort((a, b) => b.stat.mtime - a.stat.mtime);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.file?.path, tick]);
 
   if (!slug || !project) {
     return (
@@ -2766,8 +2826,32 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; 
             </div>
           </div>
           {project.description && <div className="lb-proj-desc">{project.description}</div>}
+          {docText && (
+            <MarkdownBlock app={app} plugin={plugin} text={docText} sourcePath={project.file!.path} />
+          )}
         </div>
         <div className="lb-proj-body">
+          {docs.length > 0 && (
+            <div>
+              <div className="lb-section-title">
+                <LucideIcon name="file-text" />
+                Notes
+                <span className="lb-count">{docs.length}</span>
+              </div>
+              {docs.map((d) => (
+                <div
+                  key={d.path}
+                  className="lb-doc-row"
+                  onClick={() => void openFileReuse(app, d)}
+                  title={d.path}
+                >
+                  <LucideIcon name="file-text" />
+                  <span className="lb-doc-name">{d.basename}</span>
+                  <span className="lb-arch-date">{new Date(d.stat.mtime).toISOString().slice(0, 10)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {sections.map((s) => (
             <div key={s.status}>
               <div className="lb-section-title">

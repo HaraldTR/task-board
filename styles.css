@@ -924,6 +924,42 @@
   padding: 24px;
   text-align: center;
 }
+/* Project view: folder-note body + notes-in-folder */
+.lb-proj-doc {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  color: var(--lb-text-muted);
+  font-size: var(--font-ui-small);
+}
+.lb-proj-doc p:first-child {
+  margin-top: 0;
+}
+.lb-proj-doc p:last-child {
+  margin-bottom: 0;
+}
+.lb-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--lb-border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--lb-text-muted);
+}
+.lb-doc-row:hover {
+  background: var(--lb-hover);
+  color: var(--lb-text);
+}
+.lb-doc-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Archive view: read-only index over legacy folders */
 .lb-arch-search {
   flex: 1;
