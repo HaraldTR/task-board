@@ -427,6 +427,17 @@
 .lb-dot-cancelled {
   background: var(--lb-gray);
 }
+/* archived = pre-pm notes, not tasks: hollow so it reads as a different kind */
+.lb-dot-archived {
+  border: 1.5px solid var(--lb-indigo);
+}
+.lb-archive-col .lb-column-body {
+  gap: 0;
+}
+.lb-doc-more {
+  color: var(--lb-text-faint);
+  font-style: italic;
+}
 
 /* ---------- card ---------- */
 .lb-card {
@@ -1325,7 +1336,7 @@
     padding: 0 6px;
   }
 
-  /* nav row: taller, narrower pills so Spaces|Projects|Tasks + Tags + New fit one line */
+  /* nav row: one line, never wraps — Spaces|Projects|Tasks + icon-only Tags + New */
   .lb-header-top .lb-seg,
   .lb-header-top .lb-pill,
   .lb-header-top .lb-new {
@@ -1337,12 +1348,20 @@
   }
   .lb-header-top {
     gap: 6px;
+    flex-wrap: nowrap;
   }
   .lb-new {
     padding: 0 8px;
   }
   .lb-new-suffix {
     display: none;
+  }
+  /* pills in the nav row collapse to their icon */
+  .lb-header-top .lb-pill-label {
+    display: none;
+  }
+  .lb-header-top .lb-pill {
+    padding: 0 9px;
   }
 
   /* filter row: wrap deliberately with even spacing instead of cramming */
@@ -1412,6 +1431,14 @@
   }
   .lb-arch-date {
     width: 70px;
+  }
+
+  /* scroll containers end above Obsidian mobile's floating bottom toolbar,
+     so the last card/row is reachable instead of sitting under it */
+  .lb-board,
+  .lb-proj-body,
+  .lb-projects {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 
   /* task-note banner: clear Obsidian mobile's floating view buttons
