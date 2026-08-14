@@ -24,9 +24,10 @@ const PROJECTS_VIEW_TYPE = 'task-board-projects-view';
 const PROJECT_VIEW_TYPE = 'task-board-project-view';
 const SPACES_VIEW_TYPE = 'task-board-spaces-view';
 const TAGS_VIEW_TYPE = 'task-board-tags-view';
+const ARCHIVE_VIEW_TYPE = 'task-board-archive-view';
 
 // Overview tabs stay docked leftmost in this order; other tabs flow right.
-const PINNED_VIEW_ORDER = [SPACES_VIEW_TYPE, PROJECTS_VIEW_TYPE, VIEW_TYPE, TAGS_VIEW_TYPE];
+const PINNED_VIEW_ORDER = [SPACES_VIEW_TYPE, PROJECTS_VIEW_TYPE, VIEW_TYPE, TAGS_VIEW_TYPE, ARCHIVE_VIEW_TYPE];
 
 // Pre-rename view types (plugin id was linear-board) -> current types.
 // Saved workspace layouts may still reference the old ones.
@@ -1837,7 +1838,7 @@ function NavSeg({
   active,
 }: {
   plugin: TaskBoardPlugin;
-  active: 'spaces' | 'projects' | 'tasks' | 'tags';
+  active: 'spaces' | 'projects' | 'tasks' | 'tags' | 'archive';
 }) {
   return (
     <>
@@ -1865,6 +1866,15 @@ function NavSeg({
         <LucideIcon name="tag" />
         Tags
       </button>
+      {plugin.settings.archiveFolders.trim() !== '' && (
+        <button
+          className={`lb-pill${active === 'archive' ? ' lb-pill-active' : ''}`}
+          onClick={() => void plugin.openArchiveView()}
+        >
+          <LucideIcon name="archive" />
+          Archive
+        </button>
+      )}
     </>
   );
 }
@@ -2246,6 +2256,155 @@ function TagsApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
             );
           })}
           {allTags.length === 0 && <div className="lb-empty">No tags yet — create the first one.</div>}
+        </div>
+      </div>
+    </StrictMode>
+  );
+}
+
+/* ---------------- Archive view ---------------- */
+
+// Read-only index over legacy folders (old cards, pre-pm task systems):
+// date-sorted, searchable, opens the original note. Never mutates anything.
+const ARCHIVE_RENDER_CAP = 400;
+
+function archiveFolderList(plugin: TaskBoardPlugin): string[] {
+  return plugin.settings.archiveFolders
+    .split(',')
+    .map((s) => normalizePath(s.trim()))
+    .filter((s) => s && s !== '/');
+}
+
+function ArchiveApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
+  const [tick] = useVaultTick(app);
+  const [query, setQuery] = useState('');
+  const [label, setLabel] = useState<string | null>(null);
+  const [labels, setLabels] = useState<Map<string, string>>(new Map());
+
+  const folders = archiveFolderList(plugin);
+  const files = useMemo(
+    () =>
+      app.vault
+        .getMarkdownFiles()
+        .filter((f) => folders.some((r) => f.path.startsWith(r + '/')))
+        .sort((a, b) => b.stat.mtime - a.stat.mtime),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [app, tick, plugin.settings.archiveFolders]
+  );
+
+  useEffect(() => {
+    const path = plugin.settings.archiveLabelsFile;
+    if (!path) {
+      setLabels(new Map());
+      return;
+    }
+    let live = true;
+    app.vault.adapter.read(normalizePath(path)).then(
+      (raw) => {
+        if (!live) return;
+        const m = new Map<string, string>();
+        let current: string | null = null;
+        for (const line of raw.split('\n')) {
+          const f = line.match(/-\s*file:\s*"(.+)"\s*$/);
+          if (f) {
+            current = f[1];
+            continue;
+          }
+          const p = line.match(/^\s+project:\s*(\S+)/);
+          if (p && current) {
+            m.set(current, p[1]);
+            current = null;
+          }
+        }
+        setLabels(m);
+      },
+      () => setLabels(new Map())
+    );
+    return () => {
+      live = false;
+    };
+  }, [app, tick, plugin.settings.archiveLabelsFile]);
+
+  const q = query.toLowerCase();
+  const filtered = files.filter((f) => {
+    if (q && !f.basename.toLowerCase().includes(q)) return false;
+    if (label && labels.get(f.name) !== label) return false;
+    return true;
+  });
+  const shown = filtered.slice(0, ARCHIVE_RENDER_CAP);
+
+  const labelCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of files) {
+      const l = labels.get(f.name);
+      if (l) m.set(l, (m.get(l) ?? 0) + 1);
+    }
+    return m;
+  }, [files, labels]);
+
+  const labelMenu = (e: React.MouseEvent) => {
+    const menu = new Menu();
+    menu.addItem((i) => i.setTitle('All projects').setChecked(!label).onClick(() => setLabel(null)));
+    for (const [l, n] of [...labelCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      menu.addItem((i) => i.setTitle(`${l} (${n})`).setChecked(label === l).onClick(() => setLabel(l)));
+    }
+    menu.showAtMouseEvent(e.nativeEvent);
+  };
+
+  const fmtDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+  return (
+    <StrictMode>
+      <div className="lb-root">
+        <div className="lb-header lb-header-top">
+          <NavSeg plugin={plugin} active="archive" />
+        </div>
+        <div className="lb-header">
+          <input
+            className="lb-arch-search"
+            type="search"
+            placeholder="Search archive…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {labelCounts.size > 0 && (
+            <button className={`lb-pill${label ? ' lb-pill-active' : ''}`} onClick={labelMenu}>
+              <LucideIcon name="package" />
+              {label ?? 'Project'}
+              <span className="lb-chev">▾</span>
+            </button>
+          )}
+          <span className="lb-arch-count">
+            {filtered.length === files.length ? `${files.length} notes` : `${filtered.length} of ${files.length}`}
+          </span>
+        </div>
+        <div className="lb-projects">
+          {folders.length === 0 ? (
+            <div className="lb-empty">No archive folders configured — add them in the plugin settings.</div>
+          ) : (
+            <>
+              <div className="lb-projrow lb-projrow-head">
+                <span className="lb-projname-col">Name</span>
+                <span className="lb-projdesc">Folder</span>
+                <span className="lb-projcount lb-projcount-wide">Project</span>
+                <span className="lb-arch-date">Date</span>
+              </div>
+              {shown.map((f) => (
+                <div key={f.path} className="lb-projrow" onClick={() => void openFileReuse(app, f)} title={f.path}>
+                  <span className="lb-projname-col lb-arch-name">{f.basename}</span>
+                  <span className="lb-projdesc">{f.parent?.path ?? ''}</span>
+                  <span className="lb-projcount lb-projcount-wide">{labels.get(f.name) ?? ''}</span>
+                  <span className="lb-arch-date">{fmtDate(f.stat.mtime)}</span>
+                </div>
+              ))}
+              {filtered.length > shown.length && (
+                <div className="lb-empty">
+                  Showing {shown.length} of {filtered.length} — refine the search.
+                </div>
+              )}
+              {filtered.length === 0 && <div className="lb-empty">Nothing matches.</div>}
+            </>
+          )}
         </div>
       </div>
     </StrictMode>
@@ -2963,6 +3122,8 @@ interface TaskBoardSettings {
   rootFolder: string;
   idPrefix: string;
   defaultAssignee: string;
+  archiveFolders: string; // comma-separated vault folders indexed by the Archive view
+  archiveLabelsFile: string; // optional YAML map of file -> project label
 }
 
 const DEFAULT_SETTINGS: TaskBoardSettings = {
@@ -2973,6 +3134,8 @@ const DEFAULT_SETTINGS: TaskBoardSettings = {
   rootFolder: 'pm',
   idPrefix: 'T',
   defaultAssignee: 'me',
+  archiveFolders: '',
+  archiveLabelsFile: '',
 };
 
 class TaskBoardSettingTab extends PluginSettingTab {
@@ -3027,6 +3190,36 @@ class TaskBoardSettingTab extends PluginSettingTab {
             this.plugin.settings.defaultAssignee = v.trim() || 'me';
             await this.plugin.saveData(this.plugin.settings);
             applyConfig(this.plugin.settings);
+          })
+      );
+
+    new Setting(this.containerEl)
+      .setName('Archive folders')
+      .setDesc(
+        'Comma-separated vault folders indexed by the read-only Archive view (old cards, legacy task systems). Empty hides the view.'
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder('projects/cards, projects/archive')
+          .setValue(this.plugin.settings.archiveFolders)
+          .onChange(async (v) => {
+            this.plugin.settings.archiveFolders = v;
+            await this.plugin.saveData(this.plugin.settings);
+          })
+      );
+
+    new Setting(this.containerEl)
+      .setName('Archive labels file')
+      .setDesc(
+        'Optional YAML file mapping archived files to project labels (entries with `file:` and `project:` keys). Labels become a filter in the Archive view.'
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder('pm/cards-map.yaml')
+          .setValue(this.plugin.settings.archiveLabelsFile)
+          .onChange(async (v) => {
+            this.plugin.settings.archiveLabelsFile = v.trim();
+            await this.plugin.saveData(this.plugin.settings);
           })
       );
 
@@ -3102,6 +3295,7 @@ const LIST_VIEWS: {
   { type: PROJECTS_VIEW_TYPE, title: 'Projects', icon: 'package', component: ProjectsApp },
   { type: VIEW_TYPE, title: 'Task board', icon: 'kanban-square', component: BoardApp },
   { type: TAGS_VIEW_TYPE, title: 'Tags', icon: 'tag', component: TagsApp },
+  { type: ARCHIVE_VIEW_TYPE, title: 'Archive', icon: 'archive', component: ArchiveApp },
 ];
 
 class ProjectDetailView extends ReactItemView {
@@ -3185,6 +3379,7 @@ export default class TaskBoardPlugin extends Plugin {
       ['open-projects', 'Open projects', PROJECTS_VIEW_TYPE],
       ['open-spaces', 'Open spaces', SPACES_VIEW_TYPE],
       ['open-tags', 'Open tags', TAGS_VIEW_TYPE],
+      ['open-archive', 'Open archive', ARCHIVE_VIEW_TYPE],
     ];
     for (const [id, name, type] of openCommands) {
       this.addCommand({ id, name, callback: () => void this.revealView(type) });
@@ -3252,6 +3447,10 @@ export default class TaskBoardPlugin extends Plugin {
 
   openTagsView() {
     return this.revealView(TAGS_VIEW_TYPE);
+  }
+
+  openArchiveView() {
+    return this.revealView(ARCHIVE_VIEW_TYPE);
   }
 
   // Re-point ghost tabs left over from the linear-board -> task-board rename.
