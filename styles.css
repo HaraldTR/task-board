@@ -972,6 +972,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* subfolder a note sits in, when the project folder has nested notes */
+.lb-doc-sub {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lb-text-faint);
+  font-size: var(--font-ui-smaller);
+  border: 1px solid var(--lb-border);
+  border-radius: var(--lb-control-radius);
+  padding: 0 6px;
+  line-height: 17px;
+}
 
 /* Archive view: read-only index over legacy folders */
 .lb-arch-search {

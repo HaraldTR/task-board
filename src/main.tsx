@@ -2773,14 +2773,22 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app, project?.file?.path, tick]);
+  // every note under the project folder, subfolders included
   const docs = useMemo(() => {
-    const parent = project?.file?.parent;
-    if (!parent) return [] as TFile[];
-    return parent.children
-      .filter((c): c is TFile => c instanceof TFile && c.extension === 'md' && c.path !== project?.file?.path)
-      .sort((a, b) => b.stat.mtime - a.stat.mtime);
+    const root = project?.file?.parent;
+    if (!root) return [] as TFile[];
+    const out: TFile[] = [];
+    const walk = (folder: TFolder) => {
+      for (const c of folder.children) {
+        if (c instanceof TFolder) walk(c);
+        else if (c instanceof TFile && c.extension === 'md' && c.path !== project?.file?.path) out.push(c);
+      }
+    };
+    walk(root);
+    return out.sort((a, b) => b.stat.mtime - a.stat.mtime);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.file?.path, tick]);
+  const docRoot = project?.file?.parent?.path ?? '';
 
   if (!slug || !project) {
     return (
@@ -2893,6 +2901,9 @@ function ProjectApp({ app, plugin, slug }: { app: App; plugin: TaskBoardPlugin; 
                 >
                   <LucideIcon name="file-text" />
                   <span className="lb-doc-name">{d.basename}</span>
+                  {d.parent && d.parent.path !== docRoot && (
+                    <span className="lb-doc-sub">{d.parent.path.slice(docRoot.length + 1)}</span>
+                  )}
                   <span className="lb-arch-date">{new Date(d.stat.mtime).toISOString().slice(0, 10)}</span>
                 </div>
               ))}
