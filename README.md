@@ -63,8 +63,8 @@ completed:             # stamped on Done, cleared on reopen
 
 Not yet in the community registry. Until then:
 
-1. **Manual**: copy `main.js`, `manifest.json`, `styles.css` from a release into `<vault>/.obsidian/plugins/task-board/`, then enable it in Settings → Community plugins.
-2. **BRAT**: add this repo in the BRAT plugin to track releases.
+1. **Manual**: download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/HaraldTR/task-board/releases/latest) into `<vault>/.obsidian/plugins/task-board/`, then enable it in Settings → Community plugins.
+2. **BRAT**: add `HaraldTR/task-board` in the [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin to track releases automatically.
 
 On first run, set the **root folder** in Settings → Task Board (defaults to `pm/`), then create your first space from the board header. Works on desktop and mobile.
 
@@ -85,6 +85,15 @@ npm run ship        # build + copy into your vault, then reload Obsidian
 ```
 
 `ship` finds the vault via the `OBSIDIAN_VAULT` env var, a `.vault-path` file in the repo root (gitignored), or `../../` when the repo lives inside a vault. `npm run check` type-checks.
+
+Releases are cut by CI: bump the version in `manifest.json`, `package.json` and
+`versions.json`, then push a matching tag (no `v` prefix) — the workflow
+type-checks, builds, and publishes `main.js`, `manifest.json` and `styles.css`
+as release assets.
+
+```bash
+git tag 0.25.0 && git push origin 0.25.0
+```
 
 Design history lives in [`docs/`](docs/) — including the [spaces design doc](docs/2026-08-13-spaces-design.html) with full UI mockups.
 

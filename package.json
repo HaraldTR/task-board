@@ -2,6 +2,26 @@
   "name": "task-board",
   "version": "0.24.0",
   "description": "Linear-style task management for Obsidian: spaces, projects, tasks, and tags as plain markdown",
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "tasks",
+    "task-management",
+    "kanban",
+    "project-management",
+    "markdown",
+    "linear"
+  ],
+  "homepage": "https://github.com/HaraldTR/task-board#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HaraldTR/task-board.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HaraldTR/task-board/issues"
+  },
+  "author": "Harald Tryti Rieber",
+  "license": "MIT",
   "main": "main.js",
   "type": "module",
   "scripts": {
