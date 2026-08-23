@@ -1432,7 +1432,7 @@ function readable(color: string, mode: 'dark' | 'light'): string {
   let out = color;
   if (!clears(0)) {
     // Blending all the way always clears, so bisect for the smallest shift
-    // that does — the least distortion of the color Harald actually picked.
+    // that does — the least distortion of the color the user actually picked.
     let lo = 0;
     let hi = 1;
     for (let i = 0; i < 12; i++) {
