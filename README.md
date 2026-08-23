@@ -97,6 +97,12 @@ git tag 0.25.0 && git push origin 0.25.0
 
 Design history lives in [`docs/`](docs/) — including the [spaces design doc](docs/2026-08-13-spaces-design.html) with full UI mockups.
 
+## Support
+
+Task Board is free and MIT-licensed. If it earns a place in your workflow, you
+can [sponsor its development](https://github.com/sponsors/HaraldTR) — GitHub
+takes no cut, so all of it goes to maintenance.
+
 ## License
 
 [MIT](LICENSE)
