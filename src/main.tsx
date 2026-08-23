@@ -1,5 +1,7 @@
 import {
   App,
+  EventRef,
+  Events,
   ItemView,
   MarkdownView,
   MarkdownRenderer,
@@ -131,23 +133,98 @@ interface SavedView {
   icon?: string;
 }
 
-// Flat Lucide icons offered for saved-view pills (rendered via Obsidian's setIcon).
-const VIEW_ICONS = [
-  'flame',
-  'bug',
-  'star',
-  'user',
-  'briefcase',
-  'home',
-  'zap',
-  'target',
-  'calendar',
-  'bookmark',
-  'heart',
-  'rocket',
-];
+// Icon library for saved views, spaces, projects and tags. All names are
+// Lucide (ISC) ids bundled with Obsidian and rendered via setIcon, so the whole
+// library shares one stroke weight and grid — nothing is imported at runtime.
+// Grouped only so the picker stays scannable; any icon works anywhere.
+interface IconGroup {
+  label: string;
+  icons: string[];
+}
 
-const PROJECT_ICONS = [...VIEW_ICONS, 'package', 'map', 'music', 'book', 'users', 'wrench', 'globe', 'leaf'];
+const ICON_GROUPS: IconGroup[] = [
+  {
+    label: 'Basics',
+    icons: ['flame', 'star', 'heart', 'zap', 'target', 'flag', 'bookmark', 'calendar', 'alarm-clock', 'hourglass'],
+  },
+  {
+    label: 'Work',
+    icons: [
+      'briefcase',
+      'package',
+      'square-kanban',
+      'layout-grid',
+      'workflow',
+      'presentation',
+      'megaphone',
+      'trending-up',
+      'badge-check',
+      'shield-check',
+    ],
+  },
+  {
+    label: 'Build',
+    icons: ['code-2', 'terminal', 'server', 'database', 'cpu', 'git-branch', 'bug', 'wrench', 'puzzle', 'blocks'],
+  },
+  {
+    label: 'Ideas',
+    icons: ['brain', 'bot', 'sparkles', 'lightbulb', 'rocket', 'atom', 'flask-conical', 'microscope', 'orbit', 'satellite'],
+  },
+  {
+    label: 'People',
+    icons: ['user', 'users', 'user-plus', 'heart-handshake', 'smile', 'baby', 'contact', 'gavel', 'landmark', 'scale'],
+  },
+  {
+    label: 'Home',
+    icons: ['home', 'list-checks', 'shopping-cart', 'utensils', 'coffee', 'car', 'key', 'sofa', 'hammer', 'trash-2'],
+  },
+  {
+    label: 'Money',
+    icons: [
+      'wallet',
+      'piggy-bank',
+      'coins',
+      'banknote',
+      'credit-card',
+      'receipt',
+      'calculator',
+      'circle-dollar-sign',
+      'line-chart',
+      'percent-circle',
+    ],
+  },
+  {
+    label: 'Health',
+    icons: ['heart-pulse', 'stethoscope', 'pill', 'dumbbell', 'bike', 'footprints', 'sprout', 'leaf', 'sunrise', 'waves'],
+  },
+  {
+    label: 'Occasions',
+    icons: ['cake', 'party-popper', 'gift', 'church', 'gem', 'ticket', 'wine', 'trophy', 'crown', 'medal'],
+  },
+  {
+    label: 'Places',
+    icons: ['plane', 'map', 'globe', 'compass', 'mountain', 'tent', 'sailboat', 'anchor', 'building-2', 'trees'],
+  },
+  {
+    label: 'Creative',
+    icons: [
+      'palette',
+      'brush',
+      'pen-tool',
+      'feather',
+      'camera',
+      'music',
+      'headphones',
+      'film',
+      'book',
+      'book-open',
+      'newspaper',
+      'library',
+      'graduation-cap',
+      'award',
+    ],
+  },
+];
 
 const PROJECT_COLORS = [
   '#5e6ad2',
@@ -757,20 +834,24 @@ class FormModal extends Modal {
     return input;
   }
 
-  protected addIconGrid(icons: string[], get: () => string | null, set: (v: string | null) => void) {
-    const row = this.contentEl.createDiv({ cls: 'lb-icon-row' });
+  protected addIconGrid(get: () => string | null, set: (v: string | null) => void) {
+    const wrap = this.contentEl.createDiv({ cls: 'lb-icon-picker' });
     const buttons = new Map<string, HTMLElement>();
     const paint = () => {
       for (const [ic, el] of buttons) el.toggleClass('lb-icon-selected', get() === ic);
     };
-    for (const ic of icons) {
-      const b = row.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
-      setIcon(b, ic);
-      b.addEventListener('click', () => {
-        set(get() === ic ? null : ic);
-        paint();
-      });
-      buttons.set(ic, b);
+    for (const group of ICON_GROUPS) {
+      wrap.createDiv({ cls: 'lb-icon-group-label', text: group.label });
+      const row = wrap.createDiv({ cls: 'lb-icon-row' });
+      for (const ic of group.icons) {
+        const b = row.createEl('button', { cls: 'lb-icon-btn', attr: { 'aria-label': ic } });
+        setIcon(b, ic);
+        b.addEventListener('click', () => {
+          set(get() === ic ? null : ic);
+          paint();
+        });
+        buttons.set(ic, b);
+      }
     }
     paint();
   }
@@ -856,7 +937,7 @@ class SaveViewModal extends FormModal {
       focus: true,
       onEnter: () => submit(),
     });
-    this.addIconGrid(VIEW_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addIconGrid(() => this.icon, (v) => (this.icon = v));
     this.addCta('Save', submit);
   }
 }
@@ -895,7 +976,7 @@ class SpaceModal extends FormModal {
     });
     desc.value = this.description;
     desc.addEventListener('input', () => (this.description = desc.value));
-    this.addIconGrid(PROJECT_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addIconGrid(() => this.icon, (v) => (this.icon = v));
     this.addSwatchRow(() => this.color, (v) => (this.color = v));
     this.addCta(this.existing ? 'Save' : 'Create space', () => void this.save());
   }
@@ -985,7 +1066,7 @@ class ProjectModal extends FormModal {
     desc.value = this.description;
     desc.addEventListener('input', () => (this.description = desc.value));
 
-    this.addIconGrid(PROJECT_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addIconGrid(() => this.icon, (v) => (this.icon = v));
 
     const custom = createEl('input', { type: 'text', attr: { placeholder: '#hex' } });
     const { row: swatchRow, paint: paintSwatches } = this.addSwatchRow(
@@ -1307,6 +1388,69 @@ function assigneeMenu(
 function cssVars(vars: Record<string, string | undefined | null>): React.CSSProperties | undefined {
   const entries = Object.entries(vars).filter(([, v]) => v != null);
   return entries.length ? (Object.fromEntries(entries) as React.CSSProperties) : undefined;
+}
+
+// Space/project/tag colors are picked for identity, not for legibility, and a
+// chip paints its label in its own color. Deep hues (indigo, purple) fall well
+// under 4.5:1 on a dark surface; pale ones do the same on a light surface. So
+// nothing renders the raw color: `readable()` walks it toward white or black —
+// hue and saturation intact — until its luminance clears the theme's band.
+const INK_LUMINANCE = { dark: 0.42, light: 0.18 };
+
+function parseHex(color: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+// WCAG relative luminance.
+function luminance([r, g, b]: [number, number, number]): number {
+  const [lr, lg, lb] = [r, g, b].map((c) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+}
+
+const inkCache = new Map<string, string>();
+
+function readable(color: string, mode: 'dark' | 'light'): string {
+  const key = `${color}|${mode}`;
+  const hit = inkCache.get(key);
+  if (hit) return hit;
+  const rgb = parseHex(color);
+  // Non-hex (CSS vars, named colors) can't be measured — pass them through.
+  if (!rgb) return color;
+  const toward = mode === 'dark' ? 255 : 0;
+  const blend = (t: number) =>
+    rgb.map((c) => Math.round(c + (toward - c) * t)) as [number, number, number];
+  const clears = (t: number) =>
+    mode === 'dark'
+      ? luminance(blend(t)) >= INK_LUMINANCE.dark
+      : luminance(blend(t)) <= INK_LUMINANCE.light;
+  let out = color;
+  if (!clears(0)) {
+    // Blending all the way always clears, so bisect for the smallest shift
+    // that does — the least distortion of the color Harald actually picked.
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      if (clears(mid)) hi = mid;
+      else lo = mid;
+    }
+    out = '#' + blend(hi).map((c) => c.toString(16).padStart(2, '0')).join('');
+  }
+  inkCache.set(key, out);
+  return out;
+}
+
+// Resolve a stored color against the theme in force right now. Views re-render
+// on Obsidian's 'css-change', so a theme switch repaints every chip.
+function ink(color: string | null | undefined): string | undefined {
+  if (!color) return undefined;
+  return readable(color, document.body.hasClass('theme-light') ? 'light' : 'dark');
 }
 
 function LucideIcon({ name }: { name: string }) {
@@ -1769,13 +1913,17 @@ function useVaultTick(app: App): [number, () => void] {
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
   useEffect(() => {
-    const refs = [
-      app.metadataCache.on('changed', refresh),
-      app.vault.on('delete', refresh),
-      app.vault.on('rename', refresh),
-      app.vault.on('create', refresh),
+    // offref() only searches the emitter it is called on, so each ref has to be
+    // released through the emitter that produced it.
+    const subs: [Events, EventRef][] = [
+      [app.metadataCache, app.metadataCache.on('changed', refresh)],
+      [app.vault, app.vault.on('delete', refresh)],
+      [app.vault, app.vault.on('rename', refresh)],
+      [app.vault, app.vault.on('create', refresh)],
+      // Repaint chips when the theme flips: their colors are resolved per theme.
+      [app.workspace, app.workspace.on('css-change', refresh)],
     ];
-    return () => refs.forEach((r) => app.metadataCache.offref(r));
+    return () => subs.forEach(([emitter, ref]) => emitter.offref(ref));
   }, [app, refresh]);
   return [tick, refresh];
 }
@@ -1822,7 +1970,7 @@ function SpaceSwitcher({ app, plugin, space }: { app: App; plugin: TaskBoardPlug
   return (
     <button
       className="lb-space-sw"
-      style={cssVars({ '--space-color': current?.color })}
+      style={cssVars({ '--space-color': ink(current?.color) })}
       onClick={openMenu}
       title="Switch space"
     >
@@ -1906,7 +2054,7 @@ function EntityChip({
       className={`lb-chip${size === 'lg' ? ' lb-chip-lg' : ''}${size === 'row' ? ' lb-chip-row' : ''}${
         onClick ? ' lb-chip-click' : ''
       }${dashed ? ' lb-chip-dashed' : ''}`}
-      style={cssVars({ '--chip-color': color })}
+      style={cssVars({ '--chip-color': ink(color) })}
       onClick={onClick}
       title={title}
     >
@@ -1980,7 +2128,7 @@ function NoteBanner({ app, plugin, file }: { app: App; plugin: TaskBoardPlugin; 
             <LucideIcon name="chevron-right" />
             <span
               className="lb-crumb-space lb-crumb-proj"
-              style={cssVars({ '--proj-color': proj?.color })}
+              style={cssVars({ '--proj-color': ink(proj?.color) })}
               onClick={() => void plugin.openProject(task.project!)}
               title={`Open project: ${task.project}`}
             >
@@ -2149,7 +2297,7 @@ class TagEditModal extends FormModal {
       value: this.name,
       onInput: (v) => (this.name = v),
     });
-    this.addIconGrid(PROJECT_ICONS, () => this.icon, (v) => (this.icon = v));
+    this.addIconGrid(() => this.icon, (v) => (this.icon = v));
     this.addSwatchRow(() => this.color, (v) => (this.color = v));
     this.addCta(this.existing ? 'Save' : 'Create tag', () => void this.save());
   }
@@ -2659,7 +2807,7 @@ function ProjectsApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
                   }}
                   title="Click to scope · right-click for actions"
                 >
-                  <span className="lb-dot" style={{ background: color ?? 'var(--lb-gray)' }} />
+                  <span className="lb-dot" style={{ background: ink(color) ?? 'var(--lb-gray)' }} />
                   {label}
                   <span className="lb-count">{items.length}</span>
                 </div>
@@ -2967,13 +3115,17 @@ function BoardApp({ app, plugin }: { app: App; plugin: TaskBoardPlugin }) {
   const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const refs = [
-      app.metadataCache.on('changed', refresh),
-      app.vault.on('delete', refresh),
-      app.vault.on('rename', refresh),
-      app.vault.on('create', refresh),
+    // offref() only searches the emitter it is called on, so each ref has to be
+    // released through the emitter that produced it.
+    const subs: [Events, EventRef][] = [
+      [app.metadataCache, app.metadataCache.on('changed', refresh)],
+      [app.vault, app.vault.on('delete', refresh)],
+      [app.vault, app.vault.on('rename', refresh)],
+      [app.vault, app.vault.on('create', refresh)],
+      // Repaint chips when the theme flips: their colors are resolved per theme.
+      [app.workspace, app.workspace.on('css-change', refresh)],
     ];
-    return () => refs.forEach((r) => app.metadataCache.offref(r));
+    return () => subs.forEach(([emitter, ref]) => emitter.offref(ref));
   }, [app, refresh]);
 
   // Mobile: land on the Today lane instead of the leftmost column.

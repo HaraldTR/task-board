@@ -838,11 +838,26 @@
 }
 
 /* save-view modal icon picker (renders in document body — Obsidian vars only) */
+.lb-icon-picker {
+  max-height: 268px;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 4px;
+}
+.lb-icon-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin: 10px 0 4px;
+}
+.lb-icon-picker > .lb-icon-group-label:first-child {
+  margin-top: 0;
+}
 .lb-icon-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
 }
 .lb-icon-btn {
   width: 32px;

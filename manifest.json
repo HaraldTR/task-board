@@ -1,7 +1,7 @@
 {
   "id": "task-board",
   "name": "Task Board",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "minAppVersion": "1.5.0",
   "description": "Linear-style task management over plain markdown: spaces, projects, tasks, and tags.",
   "author": "Harald Tryti Rieber",
